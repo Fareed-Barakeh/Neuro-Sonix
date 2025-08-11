@@ -10,9 +10,11 @@ Sound Synthesis — MIDI generation and synthesis pipeline renders the compositi
 Automation — Batch processing capabilities for large sets of textual inputs.
 
 Text (testimonies, phrases)
+
         │
         ▼
 Encoding (letter → pitch / duration / dynamics)
+
         │
         ▼
 Base Melody (rule-based composition)
