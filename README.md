@@ -9,6 +9,24 @@ AI-Driven Velocity Mapping — Machine learning models adjust note velocities fo
 Sound Synthesis — MIDI generation and synthesis pipeline renders the compositions into audio files for installation playback.
 Automation — Batch processing capabilities for large sets of textual inputs.
 
+Text (testimonies, phrases)
+        │
+        ▼
+Encoding (letter → pitch / duration / dynamics)
+        │
+        ▼
+Base Melody (rule-based composition)
+        │
+        ▼
+AI Harmony & Dynamics (neural chords + velocity shaping)
+        │
+        ▼
+MIDI (tracks, tempo, instrumentation)
+        │
+        ▼
+Audio (rendered in DAW)
+
+
 # Tools & Libraries
 Python — Core processing and mapping logic.
 MIDI Libraries — For generating and editing structured musical data (mido, pretty_midi).
@@ -26,18 +44,4 @@ Accessibility tools for converting text into sound-based representations.
 Weaving the Present, Shaping the Future was a socially engaged art project by Khaled Barakeh amplifying the voices and experiences of asylum seekers in Northern Ireland through multiple artistic media. My contribution — NeuroSonix — added a sound dimension by sonifying personal testimonies, allowing these narratives to resonate beyond the written word.
 
 
-#Processing Pipeline
-flowchart LR
-    A[Text\n(testimonies, phrases)] --> B[Encoding\n(letter → pitch/duration/dynamics)]
-    B --> C[Base Melody\n(rule-based composition)]
-    C --> D[AI Harmony & Dynamics\n(neural chords + velocity shaping)]
-    D --> E[MIDI\n(tracks, tempo, instrumentation)]
-    E --> F[Audio\n(rendering in DAW)]
-    
-#Pipeline Steps:
-Text — Input testimonies or any written text.
-Encoding — Map each letter to pitch, duration, and dynamics values.
-Base Melody — Generate melody and rhythm from encoded data using deterministic rules.
-AI Harmony & Dynamics — Apply neural models for harmonic accompaniment and expressive velocity shaping.
-MIDI — Export structured musical data (tracks, tempo, instrumentation).
-Audio — Render final composition in a DAW for installation playback.
+
