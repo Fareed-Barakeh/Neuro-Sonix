@@ -9,18 +9,18 @@ AI-Driven Velocity Mapping — Machine learning models adjust note velocities fo
 Sound Synthesis — MIDI generation and synthesis pipeline renders the compositions into audio files for installation playback.
 Automation — Batch processing capabilities for large sets of textual inputs.
 
-        │Text (testimonies, phrases)
-        ▼
-        │Encoding (letter → pitch / duration / dynamics)
-        ▼
-        │Base Melody (rule-based composition)
-        ▼
-        │AI Harmony & Dynamics (neural chords + velocity shaping)
-        ▼
-        │MIDI (tracks, tempo, instrumentation)
-        ▼
-        │Audio (rendered in DAW)
-        ▼
+        │Text (testimonies, phrases)│
+        ▼                           ▼
+        │Encoding (letter → pitch / duration / dynamics)│
+        ▼                                               ▼
+        │Base Melody (rule-based composition)│
+        ▼                                    ▼
+        │AI Harmony & Dynamics (neural chords + velocity shaping)│
+        ▼                                                        ▼                                                                                                      
+        │MIDI (tracks, tempo, instrumentation) │
+        ▼                                      ▼  
+        │Audio (rendered in DAW)│
+        ▼                       ▼ 
 
 # Tools & Libraries
 Python — Core processing and mapping logic.
