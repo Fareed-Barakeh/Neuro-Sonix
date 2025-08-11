@@ -1,0 +1,59 @@
+import mido
+from mido import MidiFile, MidiTrack, Message
+import os
+import random
+
+# Define a mapping of musical note names in the Arabic Maqam Nahawand scale to MIDI note numbers
+nahawand_scale_to_midi = {
+    'C': 60, 'D': 62, 'E♭': 63, 'F': 65, 'G': 67, 'A♭': 68, 'B♭': 70
+}
+
+# Function to convert a word to a MIDI sequence in the Arabic Maqam Nahawand scale with varying note lengths
+def word_to_midi_sequence(word):
+    sequence = []
+    for char in word:
+        try:
+            char = char.upper()
+            if char.isalpha() and char in nahawand_scale_to_midi:
+                midi_note = nahawand_scale_to_midi[char]
+                # Generate a random note length (in milliseconds) between 300 and 1000 ms
+                note_length = random.randint(300, 1000)
+                # Add a note-on message for each MIDI note with the random note length
+                sequence.append(Message('note_on', note=midi_note, velocity=64, time=0))
+                # Add a note-off message for each MIDI note with the same note length
+                sequence.append(Message('note_off', note=midi_note, velocity=64, time=note_length))
+        except ValueError as e:
+            print(e)
+    return sequence
+
+# Input a series of words as a sentence
+sentence_input = input("Enter a series of words: ")
+
+# Split the input sentence into words
+words = sentence_input.split()
+
+# Create a MIDI file and track
+mid = MidiFile()
+track = MidiTrack()
+mid.tracks.append(track)
+
+# Iterate through the words and convert them to MIDI sequences in Arabic Maqam Nahawand scale with varying note lengths
+for i, word in enumerate(words):
+    midi_sequence = word_to_midi_sequence(word)
+    if midi_sequence:
+        for midi_note in midi_sequence:
+            track.extend(midi_sequence)
+        # Add a space (rest) between words, except for the last word
+        if i != len(words) - 1:
+            space_length = random.randint(500, 1000)  # Random space length between 500 and 1000 ms
+            space_track = MidiTrack()
+            space_track.append(Message('note_off', note=0, velocity=0, time=space_length))
+            track.extend(space_track)
+
+# Specify the desktop directory directly without using ~
+desktop_path = "/Users/fareedbarakeh/Desktop/"
+
+# Save the MIDI file on the desktop
+midi_file_path = os.path.join(desktop_path, "output_nahawand_with_spaces.mid")
+mid.save(midi_file_path)
+print(f"Transformed words to MIDI with Arabic Maqam Nahawand scale, spaces between words, and variation in note lengths, and saved as '{midi_file_path}'.")

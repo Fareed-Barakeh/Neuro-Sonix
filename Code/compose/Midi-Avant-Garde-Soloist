@@ -1,0 +1,56 @@
+import mido
+from mido import MidiFile, MidiTrack, Message
+import os
+import random
+
+# Define a mapping of musical note names to MIDI note numbers in the range of C4 to C6
+note_to_midi = {
+    'C': 60, 'D': 62, 'E': 64, 'F': 65, 'G': 67, 'A': 69, 'B': 71
+}
+
+# Function to convert a word to a MIDI sequence with slower note lengths
+def word_to_midi_sequence(word):
+    sequence = []
+    for char in word:
+        try:
+            char = char.upper()
+            if char.isalpha() and char in note_to_midi:
+                midi_note = note_to_midi[char]
+                # Generate a random note length (in milliseconds) between 100 and 200 ms
+                note_length = random.randint(100, 200)
+                # Add a note-on message for each MIDI note with the slower note length
+                sequence.append(Message('note_on', note=midi_note, velocity=64, time=0))
+                # Add a note-off message for each MIDI note with the same note length
+                sequence.append(Message('note_off', note=midi_note, velocity=64, time=note_length))
+        except ValueError as e:
+            print(e)
+    return sequence
+
+# Input a series of words as a sentence
+sentence_input = input("Enter a series of words: ")
+
+# Split the input sentence into words
+words = sentence_input.split()
+
+# Create a MIDI file and track
+mid = MidiFile()
+track = MidiTrack()
+mid.tracks.append(track)
+
+# Iterate through the words and convert them to MIDI sequences with slightly slower note lengths
+for i, word in enumerate(words):
+    midi_sequence = word_to_midi_sequence(word)
+    if midi_sequence:
+        for midi_note in midi_sequence:
+            track.append(midi_note)
+        # Add a space (rest) between words, except for the last word
+        if i != len(words) - 1:
+            space_length = random.randint(50, 250)  # Random space length between 300 and 500 ms
+            track.append(Message('note_off', note=0, velocity=0, time=space_length))
+
+# Specify the desktop directory directly without using ~
+desktop_path = "/Users/fareedbarakeh/Desktop/"
+
+# Save the MIDI file on the desktop
+midi_file_path = os.path.join(desktop_path, "8.mid")
+mid.save(midi_file_path)

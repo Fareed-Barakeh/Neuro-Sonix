@@ -1,0 +1,55 @@
+# -*- coding: utf-8 -*-
+
+import mido
+from mido import MidiFile, MidiTrack, Message
+import os
+import random
+
+# Define a mapping of musical note names to MIDI note numbers
+note_to_midi = {
+    'C': 60, 'C♯': 61, 'D': 62, 'D♯': 63, 'E': 64, 'F': 65, 'F♯': 66,
+    'G': 67, 'G♯': 68, 'A': 69, 'A♯': 70, 'B': 71
+}
+
+# Function to convert a word to a MIDI sequence with random note lengths
+def word_to_midi_sequence(word):
+    sequence = []
+    for char in word:
+        try:
+            char = char.upper()
+            if char.isalpha() and char in note_to_midi:
+                midi_note = note_to_midi[char]
+                # Generate a random note length (in milliseconds) between 300 and 1000 ms
+                note_length = random.randint(300, 1000)
+                # Add a note-on message for each MIDI note with the random note length
+                track.append(Message('note_on', note=midi_note, velocity=64, time=0))
+                # Add a note-off message for each MIDI note with the same note length
+                track.append(Message('note_off', note=midi_note, velocity=64, time=note_length))
+        except ValueError as e:
+            print(e)
+
+# Input a series of words as a sentence
+sentence_input = input("Enter a series of words: ")
+
+# Split the input sentence into words
+words = sentence_input.split()
+
+# Create a MIDI file and track
+mid = MidiFile()
+track = MidiTrack()
+mid.tracks.append(track)
+
+# Iterate through the words and convert them to MIDI sequences with varying note lengths
+for word in words:
+    word_to_midi_sequence(word)
+    # Add a rest note (silence) between words
+    rest_length = random.randint(500, 1000)  # Random rest length between 500 and 1000 ms
+    track.append(Message('note_off', note=0, velocity=0, time=rest_length))
+
+# Specify the desktop directory directly without using ~
+desktop_path = "/Users/fareedbarakeh/Desktop/"
+
+# Save the MIDI file on the desktop
+midi_file_path = os.path.join(desktop_path, "output.mid")
+mid.save(midi_file_path)
+print(f"Transformed words to MIDI with varying note lengths and saved as '{midi_file_path}'.")

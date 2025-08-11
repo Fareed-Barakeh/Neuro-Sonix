@@ -1,0 +1,33 @@
+from mido import MidiFile, MidiTrack, Message
+
+# Function to transpose a MIDI note by a specified interval
+def transpose_note(note, interval):
+    return note + interval
+
+# Load the input MIDI file with a single melody track
+input_midi = MidiFile('/Users/fareedbarakeh/Desktop/x.mid')
+melody_track = input_midi.tracks[0]
+
+# Define the interval for the harmony (e.g., a third or a sixth)
+harmony_interval = 4  # Change this value for different intervals
+
+# Create a new MIDI file and track for the harmonized melody
+output_midi = MidiFile()
+harmony_track = MidiTrack()
+output_midi.tracks.append(harmony_track)
+
+# Harmonize the melody
+for msg in melody_track:
+    if msg.type == 'note_on':
+        original_note = msg.note
+        harmony_note = transpose_note(original_note, harmony_interval)
+        harmony_track.append(Message('note_on', note=harmony_note, velocity=msg.velocity, time=msg.time))
+    elif msg.type == 'note_off':
+        original_note = msg.note
+        harmony_note = transpose_note(original_note, harmony_interval)
+        harmony_track.append(Message('note_off', note=harmony_note, velocity=msg.velocity, time=msg.time))
+
+# Save the harmonized MIDI to a file
+output_midi.save('output_harmonized.mid')
+
+print("Harmonized MIDI saved as 'output_harmonized.mid'.")
