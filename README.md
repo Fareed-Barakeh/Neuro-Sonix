@@ -1,5 +1,5 @@
 # NeuroSonix
-NeuroSonix is an AI-driven sonification system that transforms alphabetic text into structured music compositions. Letters are mapped to pitch, rhythm, and dynamics, with AI models enhancing the output through harmonic generation and expressive velocity shaping. Developed for the A Missing Camera installation in Weaving the Present, Shaping the Future at The MAC, Belfast, Northern Ireland, NeuroSonix turns written testimonies into immersive audio experiences that bridge algorithmic composition and human storytelling.
+NeuroSonix is an AI-driven sonification system that transforms alphabetic text into structured music compositions. Letters are mapped to pitch, rhythm, and dynamics, with AI models enhancing the output through harmonic generation and expressive velocity shaping. 
 
 # Technical Overview
 Text Encoding - Alphabetic characters mapped to numerical values representing pitch, duration, and dynamics.
