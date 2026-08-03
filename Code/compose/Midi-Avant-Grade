@@ -56,8 +56,7 @@ for i, word in enumerate(words):
         # Adjust the note_length_factor for the next word (slow down gradually)
         note_length_factor *= 1.1
 
-# Specify the desktop directory directly without using ~
-desktop_path = "/Users/fareedbarakeh/Desktop/"
+desktop_path = os.path.expanduser("~/Desktop/")
 
 # Save the MIDI file on the desktop
 midi_file_path = os.path.join(desktop_path, "output_dynamic_note_lengths_with_spaces.mid")

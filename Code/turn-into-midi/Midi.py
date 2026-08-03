@@ -2,9 +2,6 @@ import mido
 from mido import MidiFile, MidiTrack, Message
 import os
 
-import mido
-from mido import MidiFile, MidiTrack, Message
-
 # Define a mapping of musical note names to MIDI note numbers
 note_to_midi = {
     'C': 60, 'C♯': 61, 'D': 62, 'D♯': 63, 'E': 64, 'F': 65, 'F♯': 66, 'G': 67, 'G♯': 68, 'A': 69, 'A♯': 70, 'B': 71

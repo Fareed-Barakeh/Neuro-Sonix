@@ -48,8 +48,7 @@ for i, word in enumerate(words):
             space_length = random.randint(500, 1000)  # Random space length between 500 and 1000 ms
             track.append(Message('note_off', note=0, velocity=0, time=space_length))
 
-# Specify the desktop directory directly without using ~
-desktop_path = "/Users/fareedbarakeh/Desktop/"
+desktop_path = os.path.expanduser("~/Desktop/")
 
 # Save the MIDI file on the desktop
 midi_file_path = os.path.join(desktop_path, "output_rhythmic_notes_with_spaces.mid")

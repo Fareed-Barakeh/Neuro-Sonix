@@ -1,3 +1,5 @@
+Idea ideated by Khaled Barakeh, developed and implemented by Fareed Barakeh.
+
 # NeuroSonix
 NeuroSonix is an AI-driven sonification system that transforms alphabetic text into structured music compositions. Letters are mapped to pitch, rhythm, and dynamics, with AI models enhancing the output through harmonic generation and expressive velocity shaping. 
 

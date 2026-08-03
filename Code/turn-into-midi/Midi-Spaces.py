@@ -86,8 +86,7 @@ for word in words:
         track.append(Message('note_off', note=0, velocity=0, time=note_duration))
 
 
-# Specify the desktop directory directly without using ~
-desktop_path = "/Users/fareedbarakeh/Desktop/"
+desktop_path = os.path.expanduser("~/Desktop/")
 
 
 # Save the MIDI file on the desktop
