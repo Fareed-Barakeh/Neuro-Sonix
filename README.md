@@ -97,9 +97,9 @@ Dynamics
 Harmony
  │  render_midi.py  — three-track MIDI (melody / harmony / bass), General
  ▼                    MIDI instruments, exact ticks from a shared beat clock
- │  synth.py        — the same beat clock rendered directly to audio by a
- ▼                    small additive synthesizer (sine harmonics + ADSR per
- │                    voice) — nothing here needs an external soundfont
+ │  synth.py        — the same beat clock rendered directly to a mixed,
+ ▼                    reverberant master (see Instrumentation & mix below)
+ │                    — nothing here needs an external soundfont
  │  visualize.py    — a piano-roll picture of the same data, letters and
  ▼                    chord names printed on the notes
 MIDI + Audio + Picture
@@ -190,6 +190,53 @@ old mode and landing on the 5th degree of the new one reads as a
 pivot-chord-like transition rather than a hard cut, because scale-degree
 function is preserved even though the pitches underneath just moved.
 
+## Instrumentation & mix
+
+The first version of `synth.py` was correct but mechanical: a MIDI note
+converted straight into a sine-harmonic stack with an ADSR envelope, dry,
+in tune, exactly on the beat. That's what a sequencer produces before
+anyone plays or produces it. Six things in `synth.py` now separate a
+rendered piece from that:
+
+- **Vibrato** on the melody and countermelody, fading in over the first
+  ~150ms of a held note rather than present from the attack — a real
+  instrument settles into vibrato, it doesn't start wobbling on note one.
+- **Unison detune** on the harmony pad (3 voices, ±7 cents) and the
+  arpeggio (2 voices, ±4 cents): the classic synth-pad chorus trick.
+  Perfectly in-tune oscillators sound thin and static; a few cents of
+  spread between unison voices is most of what makes a pad sound wide
+  and alive instead of like a single flat tone.
+- **Drive** (soft `tanh` saturation) on the bass, for warmth a clean sine
+  doesn't have.
+- **Humanization**: every note's start time gets a few milliseconds of
+  jitter and its velocity a few percent, at render time only — the MIDI
+  file stays exactly quantized, since that's the notation someone would
+  open in a DAW, but the audio gets the timing looseness of something
+  played rather than sequenced. Deterministic per note (seeded from the
+  voice, index, beat, and pitch), so re-rendering the same `Score` reproduces
+  the same take.
+- **Reverb**: an 8-comb/4-allpass algorithmic reverb (the Freeverb design,
+  implemented with `scipy.signal.lfilter` so the whole tail renders in a
+  handful of calls instead of a Python loop over every sample) glues the
+  six voices into one shared space instead of six dry, disconnected
+  signals arriving from nowhere.
+- **Master bus glue**: a gentle soft-knee compressor ahead of the final
+  peak-safe normalize, instead of just scaling everything to the loudest
+  sample in the piece. A few loud transients (the crash cymbal, an
+  accented downbeat) no longer set the ceiling that quiets everything else.
+
+One correctness bug caught in building this, worth naming because it's
+the kind of thing that's easy to miss by only reading the code: a comb
+filter's DC gain is `1/(1-feedback)` — at the reverb's `room_size=0.83`
+that's about 5.9x, so the tiny DC bias an additive synth mix picks up
+from short, asymmetrically-windowed sine bursts (a low bass note only a
+few cycles long doesn't average to exactly zero) was coming out the other
+side amplified into an audible ~4.7%-of-full-scale offset. Caught by
+actually inspecting a rendered file's sample statistics, not by reading
+the DSP code and reasoning it should be fine. Fixed with a standard
+one-pole DC-blocking filter, applied both inside the reverb and once more
+on the final master bus; verified back down to ~0.03%.
+
 ## What's actually inside
 
 Worth being precise about, since the original README (below) named
@@ -210,7 +257,10 @@ TensorFlow and PyTorch, and neither is used anywhere in this codebase:
   rewrite of it.
 - **Audio synthesis is deterministic DSP**: sine-harmonic additive
   synthesis with an ADSR envelope for pitched voices, noise/pitch-envelope
-  synthesis for percussion — not a sample library.
+  synthesis for percussion, an algorithmic (Freeverb-style) reverb, and a
+  soft-knee compressor on the master bus — not a sample library, not a
+  neural vocoder. "Humanized" timing/velocity jitter is seeded pseudo-randomness,
+  not a model of how a person actually plays.
 - **The arrangement layer is rule-based arranging, not composition AI**:
   countermelody is a fixed parallel-third transposition, the arpeggio is a
   fixed broken-chord pattern, percussion follows a fixed word/sentence
