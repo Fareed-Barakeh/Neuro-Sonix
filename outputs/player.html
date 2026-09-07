@@ -338,7 +338,8 @@
     if (audio.paused) frame();
   };
 
-  loadPiece(ids[0]);
+  const requested = new URLSearchParams(location.search).get('piece');
+  loadPiece(ids.includes(requested) ? requested : ids[0]);
 })();
 </script>
 </body>
