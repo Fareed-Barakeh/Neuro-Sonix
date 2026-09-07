@@ -55,9 +55,9 @@ TIMBRES = {
                             sustain=0.68, release=1.10, vibrato_rate=0, vibrato_depth=0,
                             vibrato_onset=0, unison_cents=[-9, -3, 3, 9], drive=0, breath=0,
                             tremolo_depth=0.050, tremolo_rate=2.8),
-    'bass':          dict(harmonics=[1.0, 0.15, 0.04], attack=0.02, decay=0.10,
+    'bass':          dict(harmonics=[1.0, 0.09, 0.02], attack=0.02, decay=0.10,
                             sustain=0.82, release=0.28, vibrato_rate=0, vibrato_depth=0,
-                            vibrato_onset=0, unison_cents=[0], drive=0.5, breath=0,
+                            vibrato_onset=0, unison_cents=[0], drive=0, breath=0,
                             tremolo_depth=0.018, tremolo_rate=3.6),
     'countermelody': dict(harmonics=[1.0, 0.18, 0.22, 0.04], attack=0.06, decay=0.16,
                             sustain=0.60, release=0.42, vibrato_rate=4.2, vibrato_depth=0.0035,
@@ -407,12 +407,16 @@ def render(score: Score, pan_spread: bool = True, humanize: bool = True,
     left = _dc_block(left)
     right = _dc_block(right)
 
-    # a very gentle master high-pass, well below anything musical here (the
-    # lowest note in this whole system is still well above 30Hz) -- cleans
-    # out inaudible sub-rumble that otherwise just eats headroom and makes
-    # the compressor/normalize react to energy nobody can hear
-    left = _highpass(left, 28.0)
-    right = _highpass(right, 28.0)
+    # a very gentle master high-pass, well below anything musical here --
+    # cleans out inaudible sub-rumble that otherwise just eats headroom and
+    # makes the compressor/normalize react to energy nobody can hear. Kept
+    # well clear of the bass's own lowest note (bounded to >=29Hz --
+    # harmony.bounded_nearest_pitch), not sitting right on top of it: a
+    # cutoff too close to a real note's fundamental puts that note in the
+    # filter's own transition band, closer to its ringing corner than to
+    # being cleanly passed through.
+    left = _highpass(left, 18.0)
+    right = _highpass(right, 18.0)
 
     stereo = np.stack([left, right], axis=1)
     stereo = _soft_compress(stereo)

@@ -304,8 +304,7 @@ letting melodic lines linger into their own silences.
   energy next to the always-present dry notes, so no amount of send
   filtering moves the overall balance much. The bigger levers turned out
   to be the dry mix itself: less wetness outright, the bass's saturation
-  drive pulled back (`drive=0.9` → `0.5`, less tanh-harmonic buzz), and
-  the arpeggio's unison chorus narrowed (three detuned voices → two,
+  drive pulled back, and the arpeggio's unison chorus narrowed (three detuned voices → two,
   `[-6, 0, 6]` → `[-4, 4]`, less beating/roughness) — together dropping
   the sub-250Hz share of total spectral energy from roughly 80% to the
   low 60s on all three demo pieces.
@@ -331,6 +330,25 @@ letting melodic lines linger into their own silences.
   own length instead of a fixed absolute value — a short note's overhang
   now scales with the note (tens of ms) instead of sitting at a constant
   regardless of it (hundreds of ms to over a second).
+
+- **A second, low-note-specific bug, found after that**: the walking
+  bass's passing tone (`compose.py`'s chromatic approach to the next
+  chord's root) used plain `harmony.nearest_pitch()` instead of the
+  register-anchored `bounded_nearest_pitch()` every other bass note goes
+  through, so a downward chromatic approach could occasionally undercut
+  the bass's intended floor by up to another 6 semitones — observed: a
+  MIDI 13 note, 17.3Hz, below the master high-pass's own cutoff and at
+  the edge of audibility, an unbounded rumble rather than a bass note. Now
+  bounded the same way as every other bass note (floor: MIDI 15, ~29Hz).
+  The bass timbre itself was also purified further while chasing this:
+  `drive` (a tanh saturation stage) removed entirely — measured THD
+  impact at the levels it was actually set to (0.5-0.9) turned out to be
+  negligible, so it was adding risk of nonlinear grit for no real
+  warmth — and its harmonic content thinned (`[1.0, 0.15, 0.04]` →
+  `[1.0, 0.09, 0.02]`) for a rounder, purer low end. The master high-pass
+  was also moved down from 28Hz to 18Hz: 28Hz sat close enough to the
+  bass's own lowest note to put that note partly in the filter's own
+  transition band rather than cleanly clear of it.
 
 **Removed or pulled back, on purpose:** the per-word hi-hat tick is gone
 entirely (a rhythm-section device, not an atmosphere), replaced with a

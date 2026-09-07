@@ -187,7 +187,13 @@ def compose(text: str, tempo_bpm: float = 96.0, key: harmony.Key | None = None,
             main_dur = dur * WALKING_BASS_MAIN_FRACTION
             passing_dur = max(dur - main_dur, 0.05)
             bass_track.append(NoteEvent(start, main_dur * 0.96, bass_note, 58))
-            passing_note = harmony.nearest_pitch(passing_pc, bass_note)
+            # bounded, not plain nearest_pitch -- a passing tone still needs
+            # to stay within the bass's own home-register anchor, or a
+            # downward chromatic approach can occasionally undercut it by
+            # up to another 6 semitones (observed: MIDI 13, 17Hz -- below
+            # the master high-pass's own cutoff, an unbounded rumble not a
+            # bass note)
+            passing_note = harmony.bounded_nearest_pitch(passing_pc, bass_note, bass_anchor)
             bass_track.append(NoteEvent(start + main_dur, passing_dur * 0.9, passing_note, 42))
             prev_bass = passing_note
         else:
