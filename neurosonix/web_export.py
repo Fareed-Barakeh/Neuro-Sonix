@@ -30,7 +30,7 @@ def to_dict(score: Score, title: str = '') -> dict:
             for voice, events in score.tracks.items()
         },
         'chords': [
-            {'start': c.start_beat, 'dur': c.duration_beat, 'roman': c.key.chord_label(c.degree),
+            {'start': c.start_beat, 'dur': c.duration_beat, 'roman': c.key.chord_label(c.degree, seventh=c.seventh),
              'key': c.key.name()}
             for c in score.chord_progression
         ],

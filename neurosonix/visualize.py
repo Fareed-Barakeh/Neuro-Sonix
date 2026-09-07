@@ -42,7 +42,8 @@ def plot(score: Score, title: str | None = None, out_path: str | None = None):
     for chord in score.chord_progression:
         ax.add_patch(Rectangle((chord.start_beat, plot_lo), chord.duration_beat, (hi + 1.5) - plot_lo,
                                  facecolor=COLORS['harmony'], alpha=0.05, linewidth=0, zorder=0))
-        ax.text(chord.start_beat + chord.duration_beat / 2, hi - 0.6, chord.key.chord_label(chord.degree),
+        ax.text(chord.start_beat + chord.duration_beat / 2, hi - 0.6,
+                 chord.key.chord_label(chord.degree, seventh=chord.seventh),
                  color='#c9946b', fontsize=8.5, ha='center', va='top', alpha=0.85)
         if chord.key.name() != prev_key_name:
             ax.axvline(chord.start_beat, color='#5a5f6e', linewidth=1, linestyle=':', alpha=0.7, zorder=1)

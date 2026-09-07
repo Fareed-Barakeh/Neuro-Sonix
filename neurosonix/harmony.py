@@ -74,13 +74,26 @@ class Key:
         fifth = scale[(degree + 4) % 7]
         return (root, third, fifth)
 
-    def chord_label(self, degree: int) -> str:
-        """Roman numeral for the triad on `degree`, quality computed from its
+    def chord_tones(self, degree: int, seventh: bool = False) -> tuple[int, ...]:
+        """Root/third/fifth[/seventh] pitch classes for the chord on `degree`.
+        Stacking one more third on top of the triad (the scale's 7th degree
+        from the root) is what turns a plain triad into real functional
+        harmony color -- a dominant seventh's pull toward the tonic is
+        stronger than a bare V, which is most of what "sophisticated"
+        harmony actually means in practice."""
+        scale = self.scale_pitch_classes()
+        offsets = (0, 2, 4, 6) if seventh else (0, 2, 4)
+        return tuple(scale[(degree + o) % 7] for o in offsets)
+
+    def chord_label(self, degree: int, seventh: bool = False) -> str:
+        """Roman numeral for the chord on `degree`, quality computed from its
         actual intervals rather than looked up from a major/minor table --
         so it's correct for any of the seven modes automatically. A major
         third above the root capitalizes the numeral, a diminished fifth
-        adds '°', an augmented fifth adds '+'."""
-        root, third, fifth = self.diatonic_triad(degree)
+        adds '°', an augmented fifth adds '+'; a seventh chord appends
+        '7' (or 'maj7' for a major seventh above the root)."""
+        tones = self.chord_tones(degree, seventh=seventh)
+        root, third, fifth = tones[:3]
         third_interval = (third - root) % 12
         fifth_interval = (fifth - root) % 12
         numeral = ROMAN_BASE[degree % 7]
@@ -89,6 +102,9 @@ class Key:
             label += '°'
         elif fifth_interval == 8:
             label += '+'
+        if seventh:
+            seventh_interval = (tones[3] - root) % 12
+            label += 'maj7' if seventh_interval == 11 else '7'
         return label
 
     def name(self) -> str:
@@ -124,7 +140,19 @@ def _consonance(chord_tones: tuple[int, int, int], melody_pc: int) -> float:
     return max(0.15, 1.0 - min(dists) / 6)
 
 
-def generate_progression(steps: list[tuple[int, Key]], seed: int | None = None) -> list[int]:
+# how hard a phrase-ending chord gets pulled toward a cadence, keyed by the
+# sentence's own terminator -- a full stop or exclamation resolves home
+# (authentic cadence, V/vii°->I), a question mark deliberately doesn't
+# (half cadence, landing on V instead: the harmony leaves the question
+# hanging in the air the way the punctuation does)
+CADENCE_TARGET = {'.': 0, '!': 0, '?': 4, '': 0}
+CADENCE_BOOST = 14.0  # strong enough that a sentence reliably resolves;
+                       # not absolute, so an occasional deceptive cadence
+                       # can still happen, the way a real progression allows
+
+
+def generate_progression(steps: list[tuple[int, Key]], seed: int | None = None,
+                           cadences: list[str | None] | None = None) -> list[int]:
     """One chord-degree (0-6) per (melody_pitch_class, key) entry in `steps`,
     Markov-sampled and reweighted toward chords that contain (or sit close
     to) that step's melody note in *that step's own key*.
@@ -136,15 +164,29 @@ def generate_progression(steps: list[tuple[int, Key]], seed: int | None = None) 
     "V" of the new one reads as a pivot-chord-like modulation rather than
     a hard cut, since scale-degree function is preserved even though the
     actual pitches underneath it just shifted.
+
+    `cadences[i]` is the phrase terminator ('.', '!', '?') if step i is the
+    last chord of its sentence, else None -- see CADENCE_TARGET. Without
+    this, a piece just wanders forever; with it, every sentence actually
+    *lands* somewhere, which is most of what makes a chord progression
+    read as composed instead of generated.
     """
     rng = random.Random(seed)
     progression: list[int] = []
     current = 0  # start on the tonic
-    for melody_pc, key in steps:
+    cadences = cadences or [None] * len(steps)
+    for (melody_pc, key), cadence in zip(steps, cadences):
         weights = list(TRANSITION_WEIGHTS[current])
         for degree in range(7):
             tones = key.diatonic_triad(degree)
             weights[degree] *= _consonance(tones, melody_pc)
+        if cadence is not None:
+            # multiplying the target's own weight isn't reliable -- if that
+            # degree's melody-consonance happened to floor out small, even
+            # x5 can still lose to another degree with high consonance.
+            # Set it relative to whatever the current max is instead, so
+            # the cadence reliably wins regardless of that step's melody note.
+            weights[CADENCE_TARGET.get(cadence, 0)] = (max(weights) + 1e-6) * CADENCE_BOOST
         total = sum(weights) or 1.0
         weights = [w / total for w in weights]
         current = rng.choices(range(7), weights=weights, k=1)[0]
@@ -185,28 +227,35 @@ def bounded_nearest_pitch(pitch_class: int, near: int, anchor: int, max_drift: i
 
 
 def chord_midi_notes(key: Key, degree: int, octave: int = 3,
-                       prev: tuple[int, int, int] | None = None) -> tuple[int, int, int]:
-    """Root/third/fifth as absolute MIDI notes.
+                       prev: tuple[int, ...] | None = None, seventh: bool = False) -> tuple[int, ...]:
+    """Root/third/fifth[/seventh] as absolute MIDI notes -- 3 or 4 voices
+    depending on `seventh`.
 
-    Without `prev`, the triad is built fresh in the given octave -- that
-    placement also serves as each voice's "home" anchor. With `prev` (the
-    previous chord's root/third/fifth), each voice instead moves to the
+    Without `prev`, the chord is built fresh in the given octave, each
+    voice stacked near the one below it -- that placement also serves as
+    each voice's "home" anchor. With `prev` (the previous chord's voices,
+    which may have been a different size), each voice instead moves to the
     nearest instance of its new pitch class -- real voice leading, so
     consecutive chords glide by a few semitones per voice -- but bounded
     back toward its home anchor so a long piece can't drift a voice
-    steadily out of register (see bounded_nearest_pitch).
+    steadily out of register (see bounded_nearest_pitch). A voice with no
+    corresponding voice in `prev` (a 7th chord following a plain triad)
+    just falls back to its home anchor.
     """
-    root_pc, third_pc, fifth_pc = key.diatonic_triad(degree)
+    pcs = key.chord_tones(degree, seventh=seventh)
     base = 12 * (octave + 1)  # MIDI note 0 = C-1, so C(octave) = 12*(octave+1)
-    anchor_root = nearest_pitch(root_pc, base)
-    anchor_third = nearest_pitch(third_pc, anchor_root)
-    anchor_fifth = nearest_pitch(fifth_pc, anchor_root)
+
+    anchors = []
+    near = base
+    for pc in pcs:
+        near = nearest_pitch(pc, near)
+        anchors.append(near)
 
     if prev is None:
-        return (anchor_root, anchor_third, anchor_fifth)
+        return tuple(anchors)
 
-    prev_root, prev_third, prev_fifth = prev
-    root = bounded_nearest_pitch(root_pc, prev_root, anchor_root)
-    third = bounded_nearest_pitch(third_pc, prev_third, anchor_third)
-    fifth = bounded_nearest_pitch(fifth_pc, prev_fifth, anchor_fifth)
-    return (root, third, fifth)
+    notes = []
+    for i, pc in enumerate(pcs):
+        prev_note = prev[i] if i < len(prev) else anchors[i]
+        notes.append(bounded_nearest_pitch(pc, prev_note, anchors[i]))
+    return tuple(notes)

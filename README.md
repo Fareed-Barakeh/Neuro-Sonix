@@ -160,6 +160,34 @@ a long piece with no bound. `harmony.bounded_nearest_pitch()` anchors each
 voice to its fixed home-octave position and caps how far a step is allowed
 to wander from it, keeping the smooth motion without the drift.
 
+## Harmonic sophistication
+
+Three more things separate a plain Markov-sampled triad progression from
+something that reads as composed:
+
+- **Extended chords.** Every chord can pick up a 7th (`harmony.chord_tones(...,
+  seventh=True)`), with the probability weighted by function — the
+  dominant (V) favors it most (60%; a dominant seventh's pull toward the
+  tonic is stronger than the bare triad), ii next (30%, the jazz
+  ii7-V7-I color), the rest more sparingly. A cadential arrival never
+  gets one — a phrase's landing chord stays a plain triad, which reads
+  more resolved without a 7th coloring it.
+- **Real cadences.** Every sentence's harmony is pulled toward actually
+  *landing* somewhere at its end, not wandering forever: a period or
+  exclamation point resolves to the tonic (an authentic cadence, V/vii°→I),
+  a question mark resolves to the dominant instead (a half cadence — the
+  harmony leaves the sentence hanging in the air the way the punctuation
+  does). This is a strong pull (`harmony.CADENCE_BOOST`), not an absolute
+  rule, so an occasional deceptive cadence can still happen — about
+  85-90% of sentences land exactly on target, the rest resolve elsewhere,
+  the way a real progression sometimes surprises you.
+- **Walking bass.** A chord held long enough (`compose.WALKING_BASS_MIN_BEATS`)
+  hands its last third to a passing tone approaching the *next* chord's
+  root by a half step, instead of sustaining one note for the whole
+  chord — what a bassist playing live actually does between chords,
+  visible in the piano roll as a staircase instead of a series of flat
+  blocks.
+
 ## Scales and modulation
 
 `harmony.Key` isn't limited to major/minor — it supports all seven
@@ -194,13 +222,24 @@ function is preserved even though the pitches underneath just moved.
 
 The first version of `synth.py` was correct but mechanical: a MIDI note
 converted straight into a sine-harmonic stack with an ADSR envelope, dry,
-in tune, exactly on the beat. That's what a sequencer produces before
-anyone plays or produces it. Six things in `synth.py` now separate a
-rendered piece from that:
+in tune, exactly on the beat, every note re-attacking from silence.
+That's what a sequencer produces before anyone plays or produces it.
+`synth.py` now separates a rendered piece from that in two ways: making
+each *note* sound played, and making the *performance* sound like one
+continuous take rather than a string of independent events.
+
+**Per-note realism:**
 
 - **Vibrato** on the melody and countermelody, fading in over the first
-  ~150ms of a held note rather than present from the attack — a real
-  instrument settles into vibrato, it doesn't start wobbling on note one.
+  ~150ms of a held note rather than present from the attack, with its
+  rate and phase wobbling slightly per note — a real vibrato isn't a
+  perfectly periodic oscillator, and it doesn't start wobbling on note one.
+- **Brightness follows velocity.** A loud note's upper harmonics carry
+  more relative energy; a quiet one is rounder and darker. A fixed
+  harmonic mix at every dynamic is one of the more obvious "sequenced" tells.
+- **Tremolo**: a slow, small amplitude drift on sustained voices (pad,
+  bass, and a touch on the leads) so a long note breathes instead of
+  sitting at a dead-flat level.
 - **Unison detune** on the harmony pad (3 voices, ±7 cents) and the
   arpeggio (2 voices, ±4 cents): the classic synth-pad chorus trick.
   Perfectly in-tune oscillators sound thin and static; a few cents of
@@ -208,6 +247,20 @@ rendered piece from that:
   and alive instead of like a single flat tone.
 - **Drive** (soft `tanh` saturation) on the bass, for warmth a clean sine
   doesn't have.
+
+**Performance realism:**
+
+- **Legato / portamento.** When melody, countermelody, or bass notes land
+  back-to-back with almost no gap (`synth.LEGATO_GAP_S`), the second note
+  glides up from the first note's pitch instead of re-attacking from
+  silence — a phrase played on one breath, or a bass line actually
+  walked between chords, not a string of separate blips. This is what the
+  walking bass above (see Harmonic sophistication) actually sounds like
+  in the render: the passing tone glides into the next chord's root.
+- **Breath**: a short burst of airy noise under a fresh, non-legato
+  melody or countermelody attack — the small onset of an embouchure
+  starting a note, absent on a legato continuation the way an actual
+  player wouldn't re-breathe mid-phrase.
 - **Humanization**: every note's start time gets a few milliseconds of
   jitter and its velocity a few percent, at render time only — the MIDI
   file stays exactly quantized, since that's the notation someone would
@@ -248,13 +301,18 @@ TensorFlow and PyTorch, and neither is used anywhere in this codebase:
   quantity (letter self-information from published English letter
   frequencies) — not learned, not random.
 - **Harmony is a Markov chain**: a 7×7 transition matrix over diatonic
-  triads, hand-authored from ordinary functional-harmony tendencies (V
+  chords, hand-authored from ordinary functional-harmony tendencies (V
   resolves to I, ii favors V, and so on), sampled and reweighted by melody
-  fit at each step. This is a real generative/statistical model — it is
-  not a trained neural network, and there's no model file or training
+  fit at each step, with a strong (not absolute) pull toward a cadence at
+  each sentence's end. This is a real generative/statistical model — it
+  is not a trained neural network, and there's no model file or training
   corpus in this repo. If a genuinely learned harmony model gets trained
   later, it belongs here as an alternative backend to `harmony.py`, not a
   rewrite of it.
+- **Extended chords and walking bass are fixed rules**, not learned or
+  generative: a chord's chance of picking up a 7th is a hand-set
+  probability per scale degree; a walking-bass passing tone is always the
+  chromatic step below the next chord's root.
 - **Audio synthesis is deterministic DSP**: sine-harmonic additive
   synthesis with an ADSR envelope for pitched voices, noise/pitch-envelope
   synthesis for percussion, an algorithmic (Freeverb-style) reverb, and a

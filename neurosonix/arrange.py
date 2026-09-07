@@ -78,20 +78,31 @@ def add_countermelody(score: Score, interval: int = COUNTERMELODY_INTERVAL) -> S
     return out
 
 
-def add_arpeggio(score: Score, pattern: tuple[int, ...] = (0, 1, 2, 1)) -> Score:
-    """Replace the static harmony pad with a rolled arpeggio at ARPEGGIO_STEP resolution."""
+def add_arpeggio(score: Score, pattern: tuple[int, ...] = (0, 1, 2, 1, 3)) -> Score:
+    """Replace the static harmony pad with a rolled arpeggio at ARPEGGIO_STEP
+    resolution. Chords are 3 or 4 voices now (see harmony.chord_tones,
+    ChordEvent.seventh) -- grouped by shared start_beat rather than a fixed
+    stride, so a 7th chord's extra voice joins the roll instead of throwing
+    off every chord after it."""
     out = copy.deepcopy(score)
     arp: list[NoteEvent] = []
-    # group the existing pad by its chord (every 3 notes = one root/third/fifth chord)
     pad = score.tracks['harmony']
-    for i in range(0, len(pad) - 2, 3):
-        root, third, fifth = pad[i], pad[i + 1], pad[i + 2]
-        chord_tones = [root.midi_note, third.midi_note, fifth.midi_note]
+
+    groups: list[list] = []
+    for ev in pad:
+        if groups and groups[-1][0].start_beat == ev.start_beat:
+            groups[-1].append(ev)
+        else:
+            groups.append([ev])
+
+    for chord_notes in groups:
+        chord_tones = [ev.midi_note for ev in chord_notes]
+        root = chord_notes[0]
         t = root.start_beat
         end = root.start_beat + root.duration_beat
         step_i = 0
         while t < end:
-            note = chord_tones[pattern[step_i % len(pattern)]]
+            note = chord_tones[pattern[step_i % len(pattern)] % len(chord_tones)]
             dur = min(ARPEGGIO_STEP, end - t) * 0.85
             vel = max(1, root.velocity - 6 + 4 * (step_i % 2))
             arp.append(NoteEvent(t, dur, note, vel, ''))

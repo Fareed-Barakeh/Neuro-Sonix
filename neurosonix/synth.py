@@ -1,24 +1,32 @@
 """Score -> a rendered .wav, with no DAW, plugin, or soundfont required.
 
-Six things separate this from "a MIDI file converted to sine waves,"
-each addressing a specific way that sounds mechanical instead of played:
+What separates this from "a MIDI file converted to sine waves":
 
-  - VIBRATO on melody and countermelody, fading in ~150ms after the
-    attack (an instrument settles into vibrato, it doesn't start
-    wobbling on note one).
+  - LEGATO / PORTAMENTO: when melody, countermelody, or bass notes land
+    back-to-back with almost no gap, the second note glides up from the
+    first note's pitch instead of re-attacking from silence -- a phrase
+    played on one breath (or one walking bass line), not a string of
+    separate blips.
+  - BREATH onset noise on a fresh (non-legato) melody/countermelody
+    attack -- the small hiss of an embouchure starting a note.
+  - VIBRATO, fading in ~150ms after the attack rather than present from
+    note one, with its own rate and phase wobbling slightly per note
+    (real vibrato isn't a perfect oscillator).
+  - BRIGHTNESS follows velocity: a loud note's upper harmonics come
+    through more; a quiet one is rounder. Real instruments do this;
+    a fixed harmonic mix at every dynamic doesn't.
+  - TREMOLO: a slow, small amplitude drift on sustained voices (pad,
+    bass) so a long note breathes instead of sitting dead flat.
   - UNISON DETUNE (a few voices a handful of cents apart) on the
-    harmony pad and arpeggio -- the classic synth-pad chorus trick,
-    since perfectly in-tune oscillators sound thin and static.
-  - DRIVE (soft saturation) on the bass for warmth, not just a clean sine.
+    harmony pad and arpeggio -- the classic synth-pad chorus trick.
+  - DRIVE (soft saturation) on the bass for warmth.
   - HUMANIZATION: every note's start time and velocity get a small
-    random nudge at render time (not in the MIDI/notation, which stays
-    quantized) -- audio-only, deterministic per note so re-rendering
-    the same Score gives the same take.
-  - REVERB: an 8-comb/4-allpass algorithmic reverb (the Freeverb
-    design) glues the six voices into one shared space instead of six
-    dry, disconnected signals.
-  - MASTER BUS glue: a gentle soft-knee compressor before the final
-    peak-safe normalize, instead of just scaling to the loudest sample.
+    random nudge at render time only (the MIDI file stays exactly
+    quantized), seeded per note for reproducibility.
+  - REVERB: an 8-comb/4-allpass algorithmic reverb (Freeverb design)
+    gluing the six voices into one shared space.
+  - MASTER BUS glue: a soft-knee compressor ahead of the final
+    peak-safe normalize.
 """
 from __future__ import annotations
 
@@ -31,25 +39,33 @@ from .compose import Score
 
 SAMPLE_RATE = 44100
 
-# (harmonic amplitudes, attack_s, decay_s, sustain_level, release_s,
-#  vibrato_rate_hz, vibrato_depth, vibrato_onset_s, unison_cents, drive)
 TIMBRES = {
     'melody':        dict(harmonics=[1.0, 0.55, 0.30, 0.18, 0.08], attack=0.008, decay=0.06,
                             sustain=0.75, release=0.09, vibrato_rate=5.4, vibrato_depth=0.0035,
-                            vibrato_onset=0.14, unison_cents=[0], drive=0),
+                            vibrato_onset=0.14, unison_cents=[0], drive=0, breath=0.05,
+                            tremolo_depth=0.015, tremolo_rate=4.6),
     'harmony':       dict(harmonics=[1.0, 0.28, 0.12, 0.05], attack=0.09, decay=0.25,
                             sustain=0.65, release=0.55, vibrato_rate=0, vibrato_depth=0,
-                            vibrato_onset=0, unison_cents=[-7, 0, 7], drive=0),
+                            vibrato_onset=0, unison_cents=[-7, 0, 7], drive=0, breath=0,
+                            tremolo_depth=0.035, tremolo_rate=3.1),
     'bass':          dict(harmonics=[1.0, 0.18, 0.05], attack=0.005, decay=0.08,
                             sustain=0.85, release=0.12, vibrato_rate=0, vibrato_depth=0,
-                            vibrato_onset=0, unison_cents=[0], drive=1.8),
+                            vibrato_onset=0, unison_cents=[0], drive=1.8, breath=0,
+                            tremolo_depth=0.02, tremolo_rate=4.0),
     'countermelody': dict(harmonics=[1.0, 0.20, 0.35, 0.05], attack=0.02, decay=0.10,
                             sustain=0.55, release=0.18, vibrato_rate=4.8, vibrato_depth=0.003,
-                            vibrato_onset=0.16, unison_cents=[0], drive=0),
+                            vibrato_onset=0.16, unison_cents=[0], drive=0, breath=0.04,
+                            tremolo_depth=0.015, tremolo_rate=4.2),
     'arpeggio':      dict(harmonics=[1.0, 0.65, 0.45, 0.30, 0.18], attack=0.002, decay=0.35,
                             sustain=0.0, release=0.05, vibrato_rate=0, vibrato_depth=0,
-                            vibrato_onset=0, unison_cents=[-4, 4], drive=0),
+                            vibrato_onset=0, unison_cents=[-4, 4], drive=0, breath=0,
+                            tremolo_depth=0, tremolo_rate=0),
 }
+
+# voices that can slur into the next note instead of re-attacking, when the
+# gap to the next note in that voice is small enough
+LEGATO_VOICES = {'melody', 'countermelody', 'bass'}
+LEGATO_GAP_S = 0.045
 
 GM_KICK, GM_HIHAT, GM_CRASH = 36, 42, 49
 
@@ -72,36 +88,76 @@ def _adsr(n_samples: int, sr: int, attack: float, decay: float, sustain: float, 
     return np.concatenate([env, tail])
 
 
-def _render_note(midi_note: int, velocity: int, duration_s: float, voice: str) -> np.ndarray:
+def _render_note(midi_note: int, velocity: int, duration_s: float, voice: str,
+                   rng: np.random.Generator, glide_from_freq: float | None = None) -> np.ndarray:
     cfg = TIMBRES.get(voice, TIMBRES['melody'])
     freq = _midi_to_freq(midi_note)
     n = max(1, int(duration_s * SAMPLE_RATE))
-    env = _adsr(n, SAMPLE_RATE, cfg['attack'], cfg['decay'], cfg['sustain'], cfg['release'])
+
+    attack = min(cfg['attack'], 0.004) if glide_from_freq is not None else cfg['attack']
+    env = _adsr(n, SAMPLE_RATE, attack, cfg['decay'], cfg['sustain'], cfg['release'])
     t = np.arange(len(env)) / SAMPLE_RATE
 
+    # portamento: glide up/down from the previous note's pitch instead of
+    # jumping straight to this note's, when the two are close to legato
+    if glide_from_freq is not None:
+        glide_s = min(0.045, duration_s * 0.35)
+        n_glide = min(max(1, int(glide_s * SAMPLE_RATE)), len(t))
+        freq_curve = np.full(len(t), freq)
+        freq_curve[:n_glide] = np.linspace(glide_from_freq, freq, n_glide)
+    else:
+        freq_curve = np.full(len(t), freq)
+
+    # vibrato: rate and phase wobble a little per note -- a real vibrato
+    # isn't a perfectly periodic oscillator
     if cfg['vibrato_depth'] > 0:
+        vib_rate = cfg['vibrato_rate'] * (1 + rng.normal(0, 0.05))
+        vib_phase = rng.uniform(0, 2 * np.pi)
         vibrato_env = np.clip((t - cfg['vibrato_onset']) / 0.15, 0, 1)
-        vibrato = cfg['vibrato_depth'] * vibrato_env * np.sin(2 * np.pi * cfg['vibrato_rate'] * t)
+        vibrato = cfg['vibrato_depth'] * vibrato_env * np.sin(2 * np.pi * vib_rate * t + vib_phase)
     else:
         vibrato = 0.0
 
+    # brightness follows loudness: a loud note's upper harmonics carry more
+    # relative energy, a quiet one is rounder/darker -- fixed spectral tilt
+    # at every dynamic is one of the more obvious "sequenced" tells
+    brightness = 0.62 + 0.58 * (velocity / 127)
     harmonics = cfg['harmonics']
+    tilts = [brightness ** h for h in range(len(harmonics))]
+
     unison = cfg['unison_cents']
     wave_sum = np.zeros_like(t)
     for cents in unison:
         detune = 2 ** (cents / 1200)
-        inst_freq = freq * detune * (1 + vibrato)
+        inst_freq = freq_curve * detune * (1 + vibrato)
         phase = 2 * np.pi * np.cumsum(inst_freq) / SAMPLE_RATE
-        for h, amp in enumerate(harmonics, start=1):
-            wave_sum += amp * np.sin(phase * h)
-    wave_sum /= sum(harmonics) * len(unison)
+        for h, (amp, tilt) in enumerate(zip(harmonics, tilts), start=1):
+            wave_sum += amp * tilt * np.sin(phase * h)
+    norm = sum(a * w for a, w in zip(harmonics, tilts)) * len(unison)
+    wave_sum /= norm
+
+    # tremolo: a slow, small amplitude drift so a sustained note breathes
+    # instead of sitting at a dead-flat level
+    if cfg.get('tremolo_depth', 0) > 0:
+        trem_rate = cfg['tremolo_rate'] * (1 + rng.normal(0, 0.04))
+        trem_phase = rng.uniform(0, 2 * np.pi)
+        wave_sum *= 1 + cfg['tremolo_depth'] * np.sin(2 * np.pi * trem_rate * t + trem_phase)
 
     if cfg['drive'] > 0:
         d = cfg['drive']
         wave_sum = np.tanh(wave_sum * d) / np.tanh(d)
 
+    out = wave_sum * env
+
+    # breath: a short burst of airy noise under a fresh (non-legato) attack
+    if cfg.get('breath', 0) > 0 and glide_from_freq is None:
+        bn = min(len(out), int(0.025 * SAMPLE_RATE))
+        breath_env = np.exp(-np.arange(bn) / SAMPLE_RATE * 80)
+        breath_noise = np.diff(rng.standard_normal(bn), prepend=0)
+        out[:bn] += breath_noise * breath_env * cfg['breath']
+
     gain = (velocity / 127) ** 1.2
-    return wave_sum * env * gain
+    return out * gain
 
 
 def _render_drum(note: int, velocity: int) -> np.ndarray:
@@ -203,6 +259,9 @@ def render(score: Score, pan_spread: bool = True, humanize: bool = True,
 
     for voice, events in score.tracks.items():
         chord_pan_cycle = [-0.35, 0.0, 0.35] if voice in ('harmony', 'arpeggio') else [voice_pan.get(voice, 0.0)]
+        can_legato = voice in LEGATO_VOICES
+        prev_end_s = None
+        prev_freq = None
         for i, ev in enumerate(events):
             rng = np.random.default_rng(hash((voice, i, ev.start_beat, ev.midi_note)) & 0xFFFFFFFF)
             start_s = ev.start_beat * 60.0 / score.tempo_bpm
@@ -211,10 +270,17 @@ def render(score: Score, pan_spread: bool = True, humanize: bool = True,
             if humanize:
                 start_s += rng.normal(0, 0.006)  # a few ms of timing looseness
                 velocity = int(np.clip(velocity * rng.uniform(0.95, 1.03), 1, 127))
+
             if voice == 'percussion':
                 samples = _render_drum(ev.midi_note, velocity)
             else:
-                samples = _render_note(ev.midi_note, velocity, dur_s, voice)
+                glide_from = None
+                if can_legato and prev_end_s is not None and 0 <= start_s - prev_end_s < LEGATO_GAP_S:
+                    glide_from = prev_freq
+                samples = _render_note(ev.midi_note, velocity, dur_s, voice, rng, glide_from_freq=glide_from)
+                prev_end_s = start_s + dur_s
+                prev_freq = _midi_to_freq(ev.midi_note)
+
             start_idx = max(0, int(start_s * SAMPLE_RATE))
             end_idx = start_idx + len(samples)
             if end_idx > n_total:

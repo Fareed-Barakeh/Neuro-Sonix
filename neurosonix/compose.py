@@ -7,6 +7,7 @@ out of sync with each other.
 """
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 
 from . import dynamics, encoding, harmony, rhythm
@@ -27,6 +28,7 @@ class ChordEvent:
     duration_beat: float
     degree: int          # 0-6, scale degree within `key`
     key: harmony.Key      # that chord's own key -- differs across chords when modulating
+    seventh: bool = False  # a 7th chord (see harmony.chord_tones) rather than a plain triad
 
 
 @dataclass
@@ -44,6 +46,20 @@ class Score:
     @property
     def length_seconds(self) -> float:
         return self.length_beats * 60.0 / self.tempo_bpm
+
+
+# probability a chord gets a 7th added, by scale degree -- dominant (V) and
+# vii° favor it most (a dominant/leading-tone seventh's pull toward the
+# tonic is stronger than the bare triad's), ii next (the jazz ii7-V7-I
+# color), everything else more sparingly
+SEVENTH_PROBABILITY = {0: 0.08, 1: 0.30, 2: 0.12, 3: 0.15, 4: 0.60, 5: 0.15, 6: 0.30}
+
+# walking bass: a chord held this many beats or longer gets its last chunk
+# handed to a passing tone approaching the *next* chord's root, instead of
+# sustaining the same note the whole way -- what a bassist playing live
+# actually does between chords
+WALKING_BASS_MIN_BEATS = 1.3
+WALKING_BASS_MAIN_FRACTION = 0.72
 
 
 def compose(text: str, tempo_bpm: float = 96.0, key: harmony.Key | None = None,
@@ -75,7 +91,10 @@ def compose(text: str, tempo_bpm: float = 96.0, key: harmony.Key | None = None,
     phrases = encoding.tokenize(text)
     melody: list[NoteEvent] = []
     cursor = 0.0
-    harmony_slots: list[tuple[float, float, int, harmony.Key]] = []  # start, dur, melody_pc, key -- one per word
+    # [start, dur, melody_pc, key, cadence] per word -- cadence is None
+    # except on the last word of a sentence, where it's that sentence's
+    # terminator ('.', '!', '?', or '' if the text just ends)
+    harmony_slots: list[list] = []
 
     for phrase_index, phrase in enumerate(phrases):
         pk = phrase_key(phrase_index)
@@ -86,7 +105,7 @@ def compose(text: str, tempo_bpm: float = 96.0, key: harmony.Key | None = None,
             if tok.is_word_start and prev_word_start is not None:
                 dur = cursor - word_start_beat
                 if dur > 0:
-                    harmony_slots.append((word_start_beat, dur, _majority_pc(word_pitch_classes), pk))
+                    harmony_slots.append([word_start_beat, dur, _majority_pc(word_pitch_classes), pk, None])
                 word_start_beat = cursor
                 word_pitch_classes = []
             prev_word_start = True
@@ -100,7 +119,10 @@ def compose(text: str, tempo_bpm: float = 96.0, key: harmony.Key | None = None,
 
         if word_pitch_classes:
             dur = cursor - word_start_beat
-            harmony_slots.append((word_start_beat, dur, _majority_pc(word_pitch_classes), pk))
+            harmony_slots.append([word_start_beat, dur, _majority_pc(word_pitch_classes), pk, None])
+
+        if harmony_slots:
+            harmony_slots[-1][4] = phrase.terminator or ''
 
         if phrase.terminator:
             vel = dynamics.terminator_velocity(phrase.terminator)
@@ -109,33 +131,65 @@ def compose(text: str, tempo_bpm: float = 96.0, key: harmony.Key | None = None,
             cursor += rhythm.word_gap_beats()
 
     # --- harmony: one Markov-sampled chord per word, biased by that word's
-    # melody, drawn from that word's own (possibly modulated) key. Each
-    # chord voice-leads from the previous one (chord_midi_notes(prev=...))
-    # instead of resetting to a fixed octave every time, so the pad and bass
-    # glide by a few semitones per chord rather than jumping registers --
-    # that still works smoothly across a key change, since voice leading
-    # only cares about the previous absolute pitch, not what key it was in.
-    degrees = harmony.generate_progression([(pc, k) for _, _, pc, k in harmony_slots], seed=seed)
+    # melody, drawn from that word's own (possibly modulated) key, and
+    # pulled toward a real cadence at the end of each sentence (see
+    # harmony.CADENCE_TARGET). Each chord voice-leads from the previous one
+    # (chord_midi_notes(prev=...)) instead of resetting to a fixed octave
+    # every time, so the pad and bass glide by a few semitones per chord
+    # rather than jumping registers -- that still works smoothly across a
+    # key change, since voice leading only cares about the previous
+    # absolute pitch, not what key it was in.
+    degrees = harmony.generate_progression(
+        [(pc, k) for _, _, pc, k, _ in harmony_slots], seed=seed,
+        cadences=[c for _, _, _, _, c in harmony_slots],
+    )
+    seventh_rng = random.Random(seed)
+
     harmony_track: list[NoteEvent] = []
     bass_track: list[NoteEvent] = []
     chord_progression: list[ChordEvent] = []
-    prev_triad = None
+    prev_chord_notes = None
     prev_bass = None
     bass_anchor = 12 * (bass_octave + 1)
-    for (start, dur, _pc, slot_key), degree in zip(harmony_slots, degrees):
-        triad = harmony.chord_midi_notes(slot_key, degree, octave=harmony_octave, prev=prev_triad)
-        bass_root_pc = slot_key.diatonic_triad(degree)[0]
+
+    for i, ((start, dur, _pc, slot_key, cadence), degree) in enumerate(zip(harmony_slots, degrees)):
+        # a cadential arrival stays a plain triad -- the "we've landed"
+        # chord reads more resolved without a seventh coloring it
+        seventh = cadence is None and seventh_rng.random() < SEVENTH_PROBABILITY[degree]
+
+        chord_notes = harmony.chord_midi_notes(slot_key, degree, octave=harmony_octave,
+                                                 prev=prev_chord_notes, seventh=seventh)
+        bass_root_pc = slot_key.chord_tones(degree)[0]
         if prev_bass is None:
             bass_note = harmony.nearest_pitch(bass_root_pc, bass_anchor)
         else:
             bass_note = harmony.bounded_nearest_pitch(bass_root_pc, prev_bass, bass_anchor)
-        prev_triad, prev_bass = triad, bass_note
 
         pad_dur = max(dur * 0.94, 0.1)
-        for note in triad:
+        for note in chord_notes:
             harmony_track.append(NoteEvent(start, pad_dur, note, 46))
-        bass_track.append(NoteEvent(start, pad_dur, bass_note, 58))
-        chord_progression.append(ChordEvent(start, dur, degree, slot_key))
+
+        # walking bass: hand the tail of a long-enough chord to a passing
+        # tone approaching the *next* chord's root by a half step, instead
+        # of sustaining one note the whole way
+        has_next = i + 1 < len(harmony_slots)
+        if has_next and dur >= WALKING_BASS_MIN_BEATS:
+            next_degree = degrees[i + 1]
+            next_key = harmony_slots[i + 1][3]
+            next_root_pc = next_key.chord_tones(next_degree)[0]
+            passing_pc = (next_root_pc - 1) % 12
+            main_dur = dur * WALKING_BASS_MAIN_FRACTION
+            passing_dur = max(dur - main_dur, 0.05)
+            bass_track.append(NoteEvent(start, main_dur * 0.96, bass_note, 58))
+            passing_note = harmony.nearest_pitch(passing_pc, bass_note)
+            bass_track.append(NoteEvent(start + main_dur, passing_dur * 0.9, passing_note, 42))
+            prev_bass = passing_note
+        else:
+            bass_track.append(NoteEvent(start, pad_dur, bass_note, 58))
+            prev_bass = bass_note
+
+        prev_chord_notes = chord_notes
+        chord_progression.append(ChordEvent(start, dur, degree, slot_key, seventh))
 
     score = Score(text=text, tempo_bpm=tempo_bpm, key=key)
     score.tracks['melody'] = melody

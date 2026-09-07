@@ -84,7 +84,7 @@ def _run_one(text: str, out_stem: pathlib.Path, tempo: float, key_str: str, seed
         'tracks': sorted(score.tracks.keys()),
         'letters_sonified': len(score.tracks['melody']),
         'duration_seconds': round(score.length_seconds, 2),
-        'chord_progression': [c.key.chord_label(c.degree) for c in score.chord_progression],
+        'chord_progression': [c.key.chord_label(c.degree, seventh=c.seventh) for c in score.chord_progression],
     }
     json_path.write_text(json.dumps(analysis, indent=2))
     return analysis
