@@ -1,30 +1,37 @@
 """Score -> a rendered .wav, with no DAW, plugin, or soundfont required.
 
-What separates this from "a MIDI file converted to sine waves":
+Tuned for a dreamy, ambient character: soft-bloom attacks, long tails,
+lush unison chorus on every voice, a spacious reverb with pre-delay, and
+a tempo-synced echo -- with the harsher/noisier elements (a clicking
+hi-hat, breath hiss, aggressive bass drive) pulled back or removed, and
+melodic lines given room to stretch into their own silences instead of
+cutting off sharply.
 
-  - LEGATO / PORTAMENTO: when melody, countermelody, or bass notes land
-    back-to-back with almost no gap, the second note glides up from the
-    first note's pitch instead of re-attacking from silence -- a phrase
-    played on one breath (or one walking bass line), not a string of
-    separate blips.
-  - BREATH onset noise on a fresh (non-legato) melody/countermelody
-    attack -- the small hiss of an embouchure starting a note.
-  - VIBRATO, fading in ~150ms after the attack rather than present from
-    note one, with its own rate and phase wobbling slightly per note
-    (real vibrato isn't a perfect oscillator).
-  - BRIGHTNESS follows velocity: a loud note's upper harmonics come
-    through more; a quiet one is rounder. Real instruments do this;
-    a fixed harmonic mix at every dynamic doesn't.
-  - TREMOLO: a slow, small amplitude drift on sustained voices (pad,
-    bass) so a long note breathes instead of sitting dead flat.
-  - UNISON DETUNE (a few voices a handful of cents apart) on the
-    harmony pad and arpeggio -- the classic synth-pad chorus trick.
-  - DRIVE (soft saturation) on the bass for warmth.
-  - HUMANIZATION: every note's start time and velocity get a small
-    random nudge at render time only (the MIDI file stays exactly
-    quantized), seeded per note for reproducibility.
-  - REVERB: an 8-comb/4-allpass algorithmic reverb (Freeverb design)
-    gluing the six voices into one shared space.
+  - NOTE STRETCH: a melody/countermelody note that isn't followed
+    closely by the next one gets to ring into the available quiet
+    instead of stopping dead on its nominal duration -- a rubato-like
+    lingering, not a fixed note length. (Legato still wins when the
+    next note *is* close: see below.)
+  - LEGATO / PORTAMENTO: melody, countermelody, and bass notes landing
+    back-to-back glide from the previous pitch instead of re-attacking.
+  - VIBRATO, fading in gradually, with rate and phase that wobble
+    slightly per note.
+  - BRIGHTNESS follows velocity; TREMOLO adds a slow amplitude drift
+    on sustained voices.
+  - UNISON DETUNE (chorus) on every pitched voice now, not just the pad
+    -- a few cents of spread is most of what "dreamy" sounds like.
+  - REVERB: an 8-comb/4-allpass algorithmic reverb (Freeverb design),
+    larger and darker than a plain room, with a short pre-delay for
+    clarity before the wash arrives.
+  - ECHO: a tempo-synced (dotted-eighth) feedback delay, darkening with
+    each repeat, layered under the reverb for width and depth.
+  - Percussion is now a sparse, soft chime marking new sentences (see
+    arrange.py) rather than a rhythm-section hi-hat/kick -- rendered
+    here as an inharmonic bell/gong shimmer, mostly tonal, with only a
+    faint, heavily smoothed noise layer for air.
+  - HUMANIZATION: a few ms of timing jitter and a few percent of
+    velocity jitter, at render time only -- the MIDI file stays exactly
+    quantized. Deterministic per note.
   - MASTER BUS glue: a soft-knee compressor ahead of the final
     peak-safe normalize.
 """
@@ -40,25 +47,25 @@ from .compose import Score
 SAMPLE_RATE = 44100
 
 TIMBRES = {
-    'melody':        dict(harmonics=[1.0, 0.55, 0.30, 0.18, 0.08], attack=0.008, decay=0.06,
-                            sustain=0.75, release=0.09, vibrato_rate=5.4, vibrato_depth=0.0035,
-                            vibrato_onset=0.14, unison_cents=[0], drive=0, breath=0.05,
-                            tremolo_depth=0.015, tremolo_rate=4.6),
-    'harmony':       dict(harmonics=[1.0, 0.28, 0.12, 0.05], attack=0.09, decay=0.25,
-                            sustain=0.65, release=0.55, vibrato_rate=0, vibrato_depth=0,
-                            vibrato_onset=0, unison_cents=[-7, 0, 7], drive=0, breath=0,
-                            tremolo_depth=0.035, tremolo_rate=3.1),
-    'bass':          dict(harmonics=[1.0, 0.18, 0.05], attack=0.005, decay=0.08,
-                            sustain=0.85, release=0.12, vibrato_rate=0, vibrato_depth=0,
-                            vibrato_onset=0, unison_cents=[0], drive=1.8, breath=0,
-                            tremolo_depth=0.02, tremolo_rate=4.0),
-    'countermelody': dict(harmonics=[1.0, 0.20, 0.35, 0.05], attack=0.02, decay=0.10,
-                            sustain=0.55, release=0.18, vibrato_rate=4.8, vibrato_depth=0.003,
-                            vibrato_onset=0.16, unison_cents=[0], drive=0, breath=0.04,
-                            tremolo_depth=0.015, tremolo_rate=4.2),
-    'arpeggio':      dict(harmonics=[1.0, 0.65, 0.45, 0.30, 0.18], attack=0.002, decay=0.35,
-                            sustain=0.0, release=0.05, vibrato_rate=0, vibrato_depth=0,
-                            vibrato_onset=0, unison_cents=[-4, 4], drive=0, breath=0,
+    'melody':        dict(harmonics=[1.0, 0.32, 0.14, 0.05], attack=0.05, decay=0.15,
+                            sustain=0.72, release=0.40, vibrato_rate=4.6, vibrato_depth=0.0045,
+                            vibrato_onset=0.22, unison_cents=[-5, 0, 5], drive=0, breath=0,
+                            tremolo_depth=0.020, tremolo_rate=4.2),
+    'harmony':       dict(harmonics=[1.0, 0.20, 0.08, 0.03], attack=0.22, decay=0.30,
+                            sustain=0.68, release=1.10, vibrato_rate=0, vibrato_depth=0,
+                            vibrato_onset=0, unison_cents=[-9, -3, 3, 9], drive=0, breath=0,
+                            tremolo_depth=0.050, tremolo_rate=2.8),
+    'bass':          dict(harmonics=[1.0, 0.15, 0.04], attack=0.02, decay=0.10,
+                            sustain=0.82, release=0.28, vibrato_rate=0, vibrato_depth=0,
+                            vibrato_onset=0, unison_cents=[0], drive=0.9, breath=0,
+                            tremolo_depth=0.018, tremolo_rate=3.6),
+    'countermelody': dict(harmonics=[1.0, 0.18, 0.22, 0.04], attack=0.06, decay=0.16,
+                            sustain=0.60, release=0.42, vibrato_rate=4.2, vibrato_depth=0.0035,
+                            vibrato_onset=0.24, unison_cents=[-4, 4], drive=0, breath=0,
+                            tremolo_depth=0.018, tremolo_rate=3.9),
+    'arpeggio':      dict(harmonics=[1.0, 0.50, 0.30, 0.16, 0.08], attack=0.01, decay=0.40,
+                            sustain=0.05, release=0.50, vibrato_rate=0, vibrato_depth=0,
+                            vibrato_onset=0, unison_cents=[-6, 0, 6], drive=0, breath=0,
                             tremolo_depth=0, tremolo_rate=0),
 }
 
@@ -66,6 +73,11 @@ TIMBRES = {
 # gap to the next note in that voice is small enough
 LEGATO_VOICES = {'melody', 'countermelody', 'bass'}
 LEGATO_GAP_S = 0.045
+
+# melodic voices allowed to stretch a note into the quiet that follows it,
+# when that quiet is *not* small enough to legato into the next note
+STRETCH_VOICES = {'melody', 'countermelody'}
+STRETCH_MAX_S = 1.1
 
 GM_KICK, GM_HIHAT, GM_CRASH = 36, 42, 49
 
@@ -149,7 +161,6 @@ def _render_note(midi_note: int, velocity: int, duration_s: float, voice: str,
 
     out = wave_sum * env
 
-    # breath: a short burst of airy noise under a fresh (non-legato) attack
     if cfg.get('breath', 0) > 0 and glide_from_freq is None:
         bn = min(len(out), int(0.025 * SAMPLE_RATE))
         breath_env = np.exp(-np.arange(bn) / SAMPLE_RATE * 80)
@@ -161,10 +172,28 @@ def _render_note(midi_note: int, velocity: int, duration_s: float, voice: str,
 
 
 def _render_drum(note: int, velocity: int) -> np.ndarray:
-    """Percussion is noise/pitch-envelope synthesis, not tonal harmonics --
-    a kick, hi-hat, and crash need transient shape, not a sustained pitch."""
+    """Percussion is a soft bell/gong shimmer now (see arrange.py's
+    add_percussion), not a rhythm-section kit -- mostly a handful of
+    slightly inharmonic sine partials (a real gong/bell spectrum isn't
+    harmonic), with only a faint, heavily smoothed noise layer under it
+    for air. GM_KICK/GM_HIHAT are kept for completeness (any Score could
+    still ask for them) but the default arrangement no longer emits either."""
     rng = np.random.default_rng(note * 97 + velocity)
     gain = (velocity / 127) ** 1.1
+    if note == GM_CRASH:
+        n = int(2.4 * SAMPLE_RATE)
+        t = np.arange(n) / SAMPLE_RATE
+        base_freq = 660.0
+        partials = [(1.0, 1.0), (2.41, 0.5), (3.76, 0.28), (5.4, 0.14)]
+        tone = np.zeros(n)
+        for ratio, amp in partials:
+            tone += amp * np.sin(2 * np.pi * base_freq * ratio * t)
+        tone /= sum(a for _, a in partials)
+        tone_env = np.exp(-t * 1.6)
+        noise = rng.standard_normal(n)
+        noise = np.convolve(noise, np.ones(40) / 40, mode='same')  # smooth off the hiss
+        noise_env = np.exp(-t * 2.2)
+        return (tone * tone_env * 0.8 + noise * noise_env * 0.22) * gain * 0.4
     if note == GM_KICK:
         n = int(0.16 * SAMPLE_RATE)
         t = np.arange(n) / SAMPLE_RATE
@@ -174,25 +203,15 @@ def _render_drum(note: int, velocity: int) -> np.ndarray:
         return np.sin(phase) * env * gain
     if note == GM_HIHAT:
         n = int(0.05 * SAMPLE_RATE)
-        noise = rng.standard_normal(n)
-        noise = np.diff(noise, prepend=0)  # crude high-pass: emphasize the hiss
+        noise = np.diff(rng.standard_normal(n), prepend=0)
         env = np.exp(-np.arange(n) / SAMPLE_RATE * 90)
         return noise * env * gain * 0.5
-    if note == GM_CRASH:
-        n = int(1.1 * SAMPLE_RATE)
-        noise = rng.standard_normal(n)
-        noise = np.diff(noise, prepend=0)
-        env = np.exp(-np.arange(n) / SAMPLE_RATE * 3.2)
-        return noise * env * gain * 0.35
     return np.zeros(1)
 
 
 # --------------------------------------------------------------------- #
 # reverb: Freeverb-style -- 8 parallel damped comb filters summed, then
-# 4 series allpass filters for diffusion. Each filter is a true IIR
-# recursion (a feedback tap `delay` samples back), implemented with
-# scipy.signal.lfilter so the whole tail renders in one call instead of
-# a Python loop over every sample.
+# 4 series allpass filters for diffusion.
 _COMB_DELAYS = [1557, 1617, 1491, 1422, 1277, 1356, 1188, 1116]
 _ALLPASS_DELAYS = [556, 441, 341, 225]
 
@@ -218,15 +237,14 @@ def _allpass(x: np.ndarray, delay: int, g: float = 0.5) -> np.ndarray:
 
 
 def _dc_block(x: np.ndarray) -> np.ndarray:
-    """A comb filter's DC gain is 1/(1-feedback) -- at feedback=0.83 that's
-    ~5.9x, so even the slight DC bias an additive synth mix picks up from
-    finite-sample rounding gets amplified into an audible offset after the
-    reverb. Standard one-pole DC blocker (y[n] = x[n] - x[n-1] + 0.995*y[n-1])
-    removes it without touching anything above a few Hz."""
+    """A comb filter's DC gain is 1/(1-feedback), so even a tiny DC bias in
+    the dry mix comes out the other side amplified into an audible offset.
+    Standard one-pole DC blocker removes it without touching anything
+    above a few Hz."""
     return lfilter([1.0, -1.0], [1.0, -0.995], x)
 
 
-def _reverb(mono: np.ndarray, room_size: float = 0.83, damping: float = 0.3) -> np.ndarray:
+def _reverb(mono: np.ndarray, room_size: float = 0.90, damping: float = 0.45) -> np.ndarray:
     out = np.zeros_like(mono)
     for d in _COMB_DELAYS:
         out += _comb(mono, d, room_size, damping)
@@ -236,10 +254,36 @@ def _reverb(mono: np.ndarray, room_size: float = 0.83, damping: float = 0.3) -> 
     return _dc_block(out)
 
 
+def _echo(x: np.ndarray, delay_samples: int, feedback: float = 0.38,
+           damping: float = 0.32, n_repeats: int = 7) -> np.ndarray:
+    """A tempo-synced feedback delay, darkening with each repeat.
+
+    Implemented as a handful of shifted, progressively filtered copies
+    added together rather than a single long-lag IIR recursion: an actual
+    `lfilter` with a multi-hundred-millisecond lag ('a' array tens of
+    thousands of samples long) costs O(n * lag) and would take minutes on
+    a full-length piece. Since the *undamped* version of this recursion is
+    just y[n] = sum_k feedback^k * x[n - k*delay], summing a handful of
+    shifted-and-scaled copies (with a cheap 2-tap lowpass applied to each
+    successive copy, to darken the repeats) gets the same audible result
+    for a fraction of the cost.
+    """
+    y = x.copy()
+    current = x
+    for k in range(1, n_repeats + 1):
+        if damping > 0:
+            current = lfilter([1 - damping], [1, -damping], current)
+        current = current * feedback
+        shift = k * delay_samples
+        if shift >= len(y):
+            break
+        y[shift:] += current[: len(y) - shift]
+    return y
+
+
 def _soft_compress(x: np.ndarray, threshold: float = 0.55, ratio: float = 3.0) -> np.ndarray:
     """Gentle peak glue: leaves anything under `threshold` untouched,
-    compresses what's above it by `ratio` -- so the loudest moments don't
-    dictate the volume of everything else the way plain peak-normalizing does."""
+    compresses what's above it by `ratio`."""
     mag = np.abs(x)
     over = np.maximum(mag - threshold, 0)
     target_mag = np.minimum(mag, threshold) + over / ratio
@@ -248,9 +292,10 @@ def _soft_compress(x: np.ndarray, threshold: float = 0.55, ratio: float = 3.0) -
 
 
 def render(score: Score, pan_spread: bool = True, humanize: bool = True,
-            reverb_wet: float = 0.16) -> np.ndarray:
+            reverb_wet: float = 0.30, reverb_predelay_s: float = 0.03,
+            echo_wet: float = 0.20, echo_beats: float = 0.75) -> np.ndarray:
     """Returns a (n_samples, 2) float array in [-1, 1]."""
-    total_s = score.length_seconds + 1.2  # tail room for the last note's release
+    total_s = score.length_seconds + 2.6  # room for the longer dreamy tails
     n_total = int(total_s * SAMPLE_RATE) + 1
     left = np.zeros(n_total)
     right = np.zeros(n_total)
@@ -260,13 +305,23 @@ def render(score: Score, pan_spread: bool = True, humanize: bool = True,
     for voice, events in score.tracks.items():
         chord_pan_cycle = [-0.35, 0.0, 0.35] if voice in ('harmony', 'arpeggio') else [voice_pan.get(voice, 0.0)]
         can_legato = voice in LEGATO_VOICES
+        can_stretch = voice in STRETCH_VOICES
         prev_end_s = None
         prev_freq = None
         for i, ev in enumerate(events):
             rng = np.random.default_rng(hash((voice, i, ev.start_beat, ev.midi_note)) & 0xFFFFFFFF)
             start_s = ev.start_beat * 60.0 / score.tempo_bpm
-            dur_s = ev.duration_beat * 60.0 / score.tempo_bpm
+            nominal_dur_s = ev.duration_beat * 60.0 / score.tempo_bpm
             velocity = ev.velocity
+
+            dur_s = nominal_dur_s
+            if can_stretch and i + 1 < len(events):
+                next_start_s = events[i + 1].start_beat * 60.0 / score.tempo_bpm
+                gap = next_start_s - (start_s + nominal_dur_s)
+                if gap >= LEGATO_GAP_S:
+                    extra = min(gap, nominal_dur_s * 0.9, STRETCH_MAX_S) * rng.uniform(0.35, 0.75)
+                    dur_s = nominal_dur_s + extra
+
             if humanize:
                 start_s += rng.normal(0, 0.006)  # a few ms of timing looseness
                 velocity = int(np.clip(velocity * rng.uniform(0.95, 1.03), 1, 127))
@@ -290,17 +345,26 @@ def render(score: Score, pan_spread: bool = True, humanize: bool = True,
             left[start_idx:end_idx] += samples * (1 - max(0, p))
             right[start_idx:end_idx] += samples * (1 + min(0, p))
 
+    if echo_wet > 0:
+        delay_samples = max(1, int(echo_beats * 60.0 / score.tempo_bpm * SAMPLE_RATE))
+        echo_l = _echo(left, delay_samples)
+        echo_r = _echo(right, delay_samples)
+        left = left + echo_wet * (echo_l - left)
+        right = right + echo_wet * (echo_r - right)
+
     if reverb_wet > 0:
         wet = _reverb((left + right) * 0.5)
+        predelay = int(reverb_predelay_s * SAMPLE_RATE)
+        wet = np.concatenate([np.zeros(predelay), wet])[: len(left)]
         offset = 11  # samples -- a hair of L/R stagger on the wet signal for width
         left = left + reverb_wet * wet
         right = right + reverb_wet * np.concatenate([np.zeros(offset), wet[:-offset]])
 
     # short, asymmetrically-windowed sine bursts (a note only a few cycles
-    # long, especially low bass notes) don't average to exactly zero on
-    # their own; summing dozens of them leaves a small residual DC bias.
-    # One more DC-blocker on the full master bus catches that, on top of
-    # the one already inside _reverb() for the comb filters' own DC gain.
+    # long) don't average to exactly zero on their own; summing dozens of
+    # them leaves a small residual DC bias, further amplified by the
+    # reverb/echo's own DC gain. One more DC-blocker on the full master bus
+    # catches all of it.
     left = _dc_block(left)
     right = _dc_block(right)
 

@@ -47,7 +47,7 @@ ARPEGGIO_STEP = 0.25
 COUNTERMELODY_INTERVAL = -3  # a third below the lead
 
 # percussion is General MIDI channel 10; these are its fixed key numbers
-GM_KICK, GM_HIHAT, GM_CRASH = 36, 42, 49
+GM_CRASH = 49  # the only percussion voice arrange.py uses now -- see add_percussion()
 
 
 def _key_at(score: Score, beat: float) -> harmony.Key:
@@ -113,24 +113,25 @@ def add_arpeggio(score: Score, pattern: tuple[int, ...] = (0, 1, 2, 1, 3)) -> Sc
 
 
 def add_percussion(score: Score) -> Score:
-    """A soft tick per word, a stronger hit per sentence, a crash on the last phrase."""
+    """A soft shimmer at each sentence start, a longer one closing the piece.
+
+    No per-word ticking and no kick: a hi-hat clicking on every word is a
+    rhythm-section device, the opposite of an ambient texture, and a kick's
+    thud reads as percussive impact rather than atmosphere. What's dreamy
+    about a "pulse" here isn't a beat, it's a sparse, soft chime marking
+    where a new sentence (a new scale, a new arrangement layer) begins --
+    see synth.py's GM_CRASH rendering, tuned as a shimmer, not a crash.
+    """
     out = copy.deepcopy(score)
     perc: list[NoteEvent] = []
-    word_starts = sorted({c.start_beat for c in _word_slots(score)})
-    for beat in word_starts:
-        perc.append(NoteEvent(beat, 0.12, GM_HIHAT, 46, ''))
     sentence_starts = _sentence_starts(score)
-    for beat in sentence_starts:
-        perc.append(NoteEvent(beat, 0.2, GM_KICK, 92, ''))
+    for i, beat in enumerate(sentence_starts):
+        vel = 30 if i > 0 else 22  # the very first entrance stays almost inaudible
+        perc.append(NoteEvent(beat, 1.0, GM_CRASH, vel, ''))
     if score.length_beats > 0:
-        perc.append(NoteEvent(max(0.0, score.length_beats - 0.5), 1.0, GM_CRASH, 100, ''))
+        perc.append(NoteEvent(max(0.0, score.length_beats - 0.5), 1.2, GM_CRASH, 50, ''))
     out.tracks['percussion'] = perc
     return out
-
-
-def _word_slots(score: Score):
-    # chord_progression already carries one ChordEvent per word
-    return score.chord_progression
 
 
 def _sentence_starts(score: Score) -> list[float]:

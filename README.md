@@ -224,43 +224,48 @@ The first version of `synth.py` was correct but mechanical: a MIDI note
 converted straight into a sine-harmonic stack with an ADSR envelope, dry,
 in tune, exactly on the beat, every note re-attacking from silence.
 That's what a sequencer produces before anyone plays or produces it.
-`synth.py` now separates a rendered piece from that in two ways: making
-each *note* sound played, and making the *performance* sound like one
-continuous take rather than a string of independent events.
+`synth.py` has since gone through two more passes: one for performance
+realism (legato, breath, humanized timing), and a second, deliberately
+**dreamy** pass — softer attacks, longer tails, an echo, a bigger and
+darker reverb — that also pulled back or removed the noisier elements
+(a clicking hi-hat, breath hiss, aggressive bass drive) in favor of
+letting melodic lines linger into their own silences.
 
 **Per-note realism:**
 
 - **Vibrato** on the melody and countermelody, fading in over the first
-  ~150ms of a held note rather than present from the attack, with its
+  ~150-220ms of a held note rather than present from the attack, with its
   rate and phase wobbling slightly per note — a real vibrato isn't a
   perfectly periodic oscillator, and it doesn't start wobbling on note one.
 - **Brightness follows velocity.** A loud note's upper harmonics carry
   more relative energy; a quiet one is rounder and darker. A fixed
   harmonic mix at every dynamic is one of the more obvious "sequenced" tells.
-- **Tremolo**: a slow, small amplitude drift on sustained voices (pad,
-  bass, and a touch on the leads) so a long note breathes instead of
-  sitting at a dead-flat level.
-- **Unison detune** on the harmony pad (3 voices, ±7 cents) and the
-  arpeggio (2 voices, ±4 cents): the classic synth-pad chorus trick.
-  Perfectly in-tune oscillators sound thin and static; a few cents of
-  spread between unison voices is most of what makes a pad sound wide
-  and alive instead of like a single flat tone.
-- **Drive** (soft `tanh` saturation) on the bass, for warmth a clean sine
-  doesn't have.
+- **Tremolo**: a slow amplitude drift on sustained voices (the pad most
+  of all) so a long note breathes instead of sitting at a dead-flat level.
+- **Unison detune (chorus) on every pitched voice**, not just the pad —
+  the harmony pad now spreads across 4 voices (±3/±9 cents) for a lusher
+  wash, and the melody, countermelody, and arpeggio all got their own
+  gentle detune where they had none before. Perfectly in-tune oscillators
+  sound thin and static; a few cents of spread between unison voices is
+  most of what "dreamy" actually sounds like.
+- **Drive** (soft `tanh` saturation) on the bass, pulled back to a gentle
+  amount for warmth without the earlier version's edge.
 
-**Performance realism:**
+**Performance and phrasing:**
 
+- **Note stretch (rubato).** A melody or countermelody note that *isn't*
+  followed closely by the next one (`synth.STRETCH_VOICES`,
+  `synth.STRETCH_MAX_S`) gets to ring on into the quiet that follows it
+  instead of stopping dead at its nominal duration — a held, lingering
+  quality rather than a fixed note length, randomized per note so it
+  doesn't stretch identically every time.
 - **Legato / portamento.** When melody, countermelody, or bass notes land
-  back-to-back with almost no gap (`synth.LEGATO_GAP_S`), the second note
+  back-to-back with almost no gap (`synth.LEGATO_GAP_S`) — the *other*
+  case, when the next note is close rather than far — the second note
   glides up from the first note's pitch instead of re-attacking from
-  silence — a phrase played on one breath, or a bass line actually
-  walked between chords, not a string of separate blips. This is what the
-  walking bass above (see Harmonic sophistication) actually sounds like
-  in the render: the passing tone glides into the next chord's root.
-- **Breath**: a short burst of airy noise under a fresh, non-legato
-  melody or countermelody attack — the small onset of an embouchure
-  starting a note, absent on a legato continuation the way an actual
-  player wouldn't re-breathe mid-phrase.
+  silence. This is what the walking bass (see Harmonic sophistication)
+  actually sounds like in the render: the passing tone glides into the
+  next chord's root.
 - **Humanization**: every note's start time gets a few milliseconds of
   jitter and its velocity a few percent, at render time only — the MIDI
   file stays exactly quantized, since that's the notation someone would
@@ -268,20 +273,41 @@ continuous take rather than a string of independent events.
   played rather than sequenced. Deterministic per note (seeded from the
   voice, index, beat, and pitch), so re-rendering the same `Score` reproduces
   the same take.
+
+**Space:**
+
 - **Reverb**: an 8-comb/4-allpass algorithmic reverb (the Freeverb design,
   implemented with `scipy.signal.lfilter` so the whole tail renders in a
-  handful of calls instead of a Python loop over every sample) glues the
-  six voices into one shared space instead of six dry, disconnected
-  signals arriving from nowhere.
+  handful of calls instead of a Python loop over every sample), tuned
+  larger and darker (`room_size=0.90`, `damping=0.45`) than a plain room,
+  with a short pre-delay (`reverb_predelay_s`) so the dry attack stays
+  clear before the wash arrives, gluing the voices into one shared space.
+- **Echo**: a tempo-synced (dotted-eighth, `echo_beats=0.75`) feedback
+  delay, darkening with each repeat. A literal long-lag IIR filter here
+  would cost O(samples × delay-in-samples) and take minutes on a full
+  piece; `synth._echo()` instead sums a handful of shifted, progressively
+  filtered copies of the signal, which is mathematically the same result
+  for the *undamped* case and close enough for the damped one, at a
+  fraction of the cost.
 - **Master bus glue**: a gentle soft-knee compressor ahead of the final
   peak-safe normalize, instead of just scaling everything to the loudest
-  sample in the piece. A few loud transients (the crash cymbal, an
-  accented downbeat) no longer set the ceiling that quiets everything else.
+  sample in the piece.
 
-One correctness bug caught in building this, worth naming because it's
-the kind of thing that's easy to miss by only reading the code: a comb
-filter's DC gain is `1/(1-feedback)` — at the reverb's `room_size=0.83`
-that's about 5.9x, so the tiny DC bias an additive synth mix picks up
+**Removed or pulled back, on purpose:** the per-word hi-hat tick is gone
+entirely (a rhythm-section device, not an atmosphere), replaced with a
+sparse soft chime marking only where a new sentence begins (see
+`arrange.add_percussion`); the closing crash is now a slowly-decaying
+inharmonic bell/gong shimmer (`synth._render_drum`, mostly tuned sine
+partials with only a faint, heavily smoothed noise layer underneath) —
+more melodic and far less noisy than the crash-cymbal noise burst it
+replaced; and breath noise on melody/countermelody attacks, present in
+the previous pass, is off by default now (`breath=0` in every `TIMBRES`
+entry) for a cleaner, less breathy texture.
+
+One correctness bug caught in building the reverb, worth naming because
+it's the kind of thing that's easy to miss by only reading the code: a
+comb filter's DC gain is `1/(1-feedback)` — at a `room_size` around 0.83-0.90
+that's roughly 6-10x, so the tiny DC bias an additive synth mix picks up
 from short, asymmetrically-windowed sine bursts (a low bass note only a
 few cycles long doesn't average to exactly zero) was coming out the other
 side amplified into an audible ~4.7%-of-full-scale offset. Caught by
