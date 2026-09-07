@@ -65,6 +65,24 @@ class Key:
         return f"{PITCH_CLASS_NAMES[self.tonic_pc]} {self.mode}"
 
 
+def snap_to_scale(midi_note: int, key: Key) -> int:
+    """Move a chromatic note to the nearest pitch class in the key's scale.
+
+    The default melody is fully chromatic on purpose -- letters run across
+    all 12 semitones, the harmony sits on 7 -- and that friction is part of
+    the original piece's character, not a bug to fix. This is the opt-in
+    alternative for text that should read as more consonant: every letter
+    still keeps its relative contour (rarer/higher letters still sit higher
+    within an octave), it's just pulled onto the same 7 notes as the chords
+    under it.
+    """
+    scale = key.scale_pitch_classes()
+    pc = midi_note % 12
+    nearest_pc = min(scale, key=lambda s: min((pc - s) % 12, (s - pc) % 12))
+    candidates = [midi_note + d for d in range(-6, 7) if (midi_note + d) % 12 == nearest_pc]
+    return min(candidates, key=lambda n: abs(n - midi_note))
+
+
 def _consonance(chord_tones: tuple[int, int, int], melody_pc: int) -> float:
     """1.0 if the melody note is a chord tone, tapering off for near misses."""
     if melody_pc in chord_tones:
@@ -92,20 +110,61 @@ def generate_progression(key: Key, melody_pitch_classes: list[int], seed: int | 
     return progression
 
 
-def chord_midi_notes(key: Key, degree: int, octave: int = 3) -> tuple[int, int, int]:
-    """Root/third/fifth as absolute MIDI notes in the given octave."""
+def nearest_pitch(pitch_class: int, near: int) -> int:
+    """The MIDI note with the given pitch class closest to `near` -- the
+    building block of voice leading: move each voice the shortest distance
+    to its next note, instead of resetting every chord to a fixed octave."""
+    n = near - ((near - pitch_class) % 12)
+    if n - near > 6:
+        n -= 12
+    elif near - n > 6:
+        n += 12
+    return n
+
+
+def bounded_nearest_pitch(pitch_class: int, near: int, anchor: int, max_drift: int = 9) -> int:
+    """nearest_pitch(), but pulled back by octaves if it would stray more
+    than `max_drift` semitones from `anchor`.
+
+    Chaining nearest_pitch() chord after chord gives smooth *local* motion,
+    but with nothing pulling a voice back toward its home register, a long
+    piece can drift a voice steadily downward (or upward) over dozens of
+    chords with no bound -- audibly, a bass line sinking into the
+    sub-basement by the end of a piece. Anchoring each step to that voice's
+    fixed home-octave position keeps the smooth step-to-step motion while
+    capping how far it's allowed to wander from home.
+    """
+    n = nearest_pitch(pitch_class, near)
+    while n - anchor > max_drift:
+        n -= 12
+    while anchor - n > max_drift:
+        n += 12
+    return n
+
+
+def chord_midi_notes(key: Key, degree: int, octave: int = 3,
+                       prev: tuple[int, int, int] | None = None) -> tuple[int, int, int]:
+    """Root/third/fifth as absolute MIDI notes.
+
+    Without `prev`, the triad is built fresh in the given octave -- that
+    placement also serves as each voice's "home" anchor. With `prev` (the
+    previous chord's root/third/fifth), each voice instead moves to the
+    nearest instance of its new pitch class -- real voice leading, so
+    consecutive chords glide by a few semitones per voice -- but bounded
+    back toward its home anchor so a long piece can't drift a voice
+    steadily out of register (see bounded_nearest_pitch).
+    """
     root_pc, third_pc, fifth_pc = key.diatonic_triad(degree)
     base = 12 * (octave + 1)  # MIDI note 0 = C-1, so C(octave) = 12*(octave+1)
+    anchor_root = nearest_pitch(root_pc, base)
+    anchor_third = nearest_pitch(third_pc, anchor_root)
+    anchor_fifth = nearest_pitch(fifth_pc, anchor_root)
 
-    def place(pc: int, near: int) -> int:
-        n = base + pc
-        while n < near - 6:
-            n += 12
-        while n > near + 6:
-            n -= 12
-        return n
+    if prev is None:
+        return (anchor_root, anchor_third, anchor_fifth)
 
-    root = place(root_pc, base + 0)
-    third = place(third_pc, root)
-    fifth = place(fifth_pc, root)
+    prev_root, prev_third, prev_fifth = prev
+    root = bounded_nearest_pitch(root_pc, prev_root, anchor_root)
+    third = bounded_nearest_pitch(third_pc, prev_third, anchor_third)
+    fifth = bounded_nearest_pitch(fifth_pc, prev_fifth, anchor_fifth)
     return (root, third, fifth)

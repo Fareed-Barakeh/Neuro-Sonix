@@ -9,10 +9,14 @@ PPQ = 480  # ticks per quarter note
 
 # General MIDI program numbers
 GM_PROGRAM = {
-    'melody': 73,   # Flute -- clear, single-voice, reads as "the text speaking"
-    'harmony': 89,  # Pad 2 (warm) -- sustained chords under the melody
-    'bass': 33,     # Fingered Bass
+    'melody': 73,        # Flute -- clear, single-voice, reads as "the text speaking"
+    'harmony': 89,       # Pad 2 (warm) -- sustained chords under the melody
+    'bass': 33,          # Fingered Bass
+    'countermelody': 69, # Oboe -- distinct from the flute lead, sits just under it
+    'arpeggio': 9,       # Glockenspiel -- bright, articulate, cuts through the pad
 }
+
+PERCUSSION_CHANNEL = 9  # GM channel 10 (0-indexed 9): fixed drum map, no program_change
 
 
 def _beats_to_ticks(beats: float) -> int:
@@ -27,11 +31,21 @@ def render(score: Score) -> mido.MidiFile:
     tempo_track.append(mido.MetaMessage('track_name', name='NeuroSonix', time=0))
     mid.tracks.append(tempo_track)
 
+    fixed_channels = {'melody': 0, 'harmony': 1, 'bass': 2, 'countermelody': 3, 'arpeggio': 4}
+    next_channel = max(fixed_channels.values()) + 1
     for name, events in score.tracks.items():
         track = mido.MidiTrack()
-        channel = {'melody': 0, 'harmony': 1, 'bass': 2}.get(name, 0)
+        is_percussion = name == 'percussion'
+        if is_percussion:
+            channel = PERCUSSION_CHANNEL
+        else:
+            if name not in fixed_channels:
+                fixed_channels[name] = next_channel
+                next_channel += 1
+            channel = fixed_channels[name]
         track.append(mido.MetaMessage('track_name', name=name, time=0))
-        track.append(mido.Message('program_change', program=GM_PROGRAM.get(name, 0), channel=channel, time=0))
+        if not is_percussion:
+            track.append(mido.Message('program_change', program=GM_PROGRAM.get(name, 0), channel=channel, time=0))
 
         # flatten to (tick, is_note_on, note, velocity) then sort -- required
         # because mido tracks are a stream of *delta* times, and overlapping

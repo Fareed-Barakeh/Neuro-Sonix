@@ -18,10 +18,14 @@ SAMPLE_RATE = 44100
 
 # (harmonic amplitudes, attack_s, decay_s, sustain_level, release_s)
 TIMBRES = {
-    'melody':  ([1.0, 0.55, 0.30, 0.18, 0.08], 0.008, 0.06, 0.75, 0.09),
-    'harmony': ([1.0, 0.28, 0.12, 0.05],       0.09,  0.25, 0.65, 0.55),
-    'bass':    ([1.0, 0.18, 0.05],             0.005, 0.08, 0.85, 0.12),
+    'melody':        ([1.0, 0.55, 0.30, 0.18, 0.08], 0.008, 0.06, 0.75, 0.09),
+    'harmony':       ([1.0, 0.28, 0.12, 0.05],       0.09,  0.25, 0.65, 0.55),
+    'bass':          ([1.0, 0.18, 0.05],             0.005, 0.08, 0.85, 0.12),
+    'countermelody': ([1.0, 0.20, 0.35, 0.05],       0.02,  0.10, 0.55, 0.18),  # reedy, sits under the lead
+    'arpeggio':      ([1.0, 0.65, 0.45, 0.30, 0.18], 0.002, 0.35, 0.0,  0.05),  # bell-like: fast attack, no sustain
 }
+
+GM_KICK, GM_HIHAT, GM_CRASH = 36, 42, 49
 
 
 def _midi_to_freq(note: int) -> float:
@@ -56,6 +60,35 @@ def _render_note(midi_note: int, velocity: int, duration_s: float, voice: str) -
     return wave_sum * env * gain
 
 
+_RNG = np.random.default_rng(0)
+
+
+def _render_drum(note: int, velocity: int) -> np.ndarray:
+    """Percussion is noise/pitch-envelope synthesis, not tonal harmonics --
+    a kick, hi-hat, and crash need transient shape, not a sustained pitch."""
+    gain = (velocity / 127) ** 1.1
+    if note == GM_KICK:
+        dur, n = 0.16, int(0.16 * SAMPLE_RATE)
+        t = np.arange(n) / SAMPLE_RATE
+        freq = 150 * np.exp(-t * 28) + 45
+        phase = 2 * np.pi * np.cumsum(freq) / SAMPLE_RATE
+        env = np.exp(-t * 18)
+        return np.sin(phase) * env * gain
+    if note == GM_HIHAT:
+        n = int(0.05 * SAMPLE_RATE)
+        noise = _RNG.standard_normal(n)
+        noise = np.diff(noise, prepend=0)  # crude high-pass: emphasize the hiss
+        env = np.exp(-np.arange(n) / SAMPLE_RATE * 90)
+        return noise * env * gain * 0.5
+    if note == GM_CRASH:
+        n = int(1.1 * SAMPLE_RATE)
+        noise = _RNG.standard_normal(n)
+        noise = np.diff(noise, prepend=0)
+        env = np.exp(-np.arange(n) / SAMPLE_RATE * 3.2)
+        return noise * env * gain * 0.35
+    return np.zeros(1)
+
+
 def render(score: Score, pan_spread: bool = True) -> np.ndarray:
     """Returns a (n_samples, 2) float array in [-1, 1]."""
     total_s = score.length_seconds + 1.2  # tail room for the last note's release
@@ -70,7 +103,10 @@ def render(score: Score, pan_spread: bool = True) -> np.ndarray:
         for i, ev in enumerate(events):
             start_s = ev.start_beat * 60.0 / score.tempo_bpm
             dur_s = ev.duration_beat * 60.0 / score.tempo_bpm
-            samples = _render_note(ev.midi_note, ev.velocity, dur_s, voice)
+            if voice == 'percussion':
+                samples = _render_drum(ev.midi_note, ev.velocity)
+            else:
+                samples = _render_note(ev.midi_note, ev.velocity, dur_s, voice)
             start_idx = int(start_s * SAMPLE_RATE)
             end_idx = start_idx + len(samples)
             if end_idx > n_total:

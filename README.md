@@ -15,20 +15,25 @@ package, `neurosonix/`, with an honest account of what's rule-based, what's
 statistical, and what's audio DSP — see [What's actually inside](#whats-actually-inside)
 below, since the original README overstated the AI involved.
 
-## Listen
+## Listen — and play
 
-Two demonstration pieces are in [`outputs/`](outputs/), generated straight
-from the text files in [`examples/`](examples/):
+**[Open the interactive player](outputs/player.html)** — a browser page (no
+install, no server) that plays either demo piece back with a synced,
+animated piano roll and the source text highlighted letter by letter as it
+sounds, karaoke-style.
 
-| Piece | Text | Key | Listen |
-|---|---|---|---|
-| `manifesto` | [`examples/manifesto.txt`](examples/manifesto.txt) — a short statement of what this project is | D minor | [outputs/manifesto.mp3](outputs/manifesto.mp3) |
-| `entropy` | [`examples/entropy.txt`](examples/entropy.txt) — on how rare letters get emphasized | D minor | [outputs/entropy.mp3](outputs/entropy.mp3) |
+Two demonstration pieces, both fully arranged (see
+[Advanced arrangement](#advanced-arrangement) below) and in [`outputs/`](outputs/),
+generated straight from the text files in [`examples/`](examples/):
+
+| Piece | Text | Key | Melody | Listen |
+|---|---|---|---|---|
+| `manifesto` | [`examples/manifesto.txt`](examples/manifesto.txt) — a short statement of what this project is | D minor | chromatic (default) | [outputs/manifesto.mp3](outputs/manifesto.mp3) |
+| `entropy` | [`examples/entropy.txt`](examples/entropy.txt) — on how rare letters get emphasized | D minor | tonal (`--tonal`) | [outputs/entropy.mp3](outputs/entropy.mp3) |
 
 Each also has a `.mid` (open it in any DAW or notation program), a `.wav`
-(the same audio, uncompressed), and a `.png` piano roll showing the melody,
-harmony, and bass together with the letters and chord names printed right
-on the score.
+(the same audio, uncompressed), a `.png` piano roll, and a `.web.json` (the
+data the interactive player reads).
 
 ![entropy.png](outputs/entropy.png)
 
@@ -38,10 +43,15 @@ on the score.
 pip install -r requirements.txt
 
 python -m neurosonix compose "Some text to sonify." --out outputs/mine --key Am --tempo 100
-# -> outputs/mine.mid, outputs/mine.wav, outputs/mine.png, outputs/mine.json
+# -> outputs/mine.mid, outputs/mine.wav, outputs/mine.png, outputs/mine.json, outputs/mine.web.json
 
-python -m neurosonix batch examples/ --out outputs/
-# -> sonifies every .txt file in examples/
+python -m neurosonix compose "Some text." --out outputs/mine --arrange --tonal
+# -> the same, plus a countermelody, arpeggio, and percussion layer (--arrange),
+#    with the melody snapped onto the chosen scale instead of staying chromatic (--tonal)
+
+python -m neurosonix batch examples/ --out outputs/ --arrange
+# -> sonifies every .txt file in examples/, and refreshes outputs/neurosonix-data.js
+#    (the bundle outputs/player.html reads)
 ```
 
 Or from Python directly:
@@ -90,8 +100,59 @@ MIDI + Audio + Picture
 ```
 
 `compose.py` runs the whole chain and returns one `Score` object; `render_midi.py`,
-`synth.py`, and `visualize.py` all read from that same object, so the MIDI file,
-the audio, and the picture can never drift out of sync with each other.
+`synth.py`, `visualize.py`, and `web_export.py` all read from that same
+object, so the MIDI file, the audio, the picture, and the interactive
+player can never drift out of sync with each other.
+
+## Advanced arrangement
+
+`compose()` alone produces three tracks: melody, a harmony pad, and bass.
+`--arrange` (or `neurosonix.arrange.progressive_arrangement()` from Python)
+runs a second pass over that same `Score` that applies four classic
+arranging techniques, in order — this is the actual step-by-step technique,
+not just a one-line flag:
+
+1. **Harmonize the melody** — `add_countermelody()`. A second melodic line
+   in parallel harmony with the lead, a third below, sounding only on
+   accented notes (word starts, uppercase letters) so it reads as emphasis
+   rather than a doubled line. This is the oldest harmonization trick
+   there is: parallel thirds and sixths, the backbone of close vocal
+   harmony.
+2. **Break the chords into motion** — `add_arpeggio()`. The harmony pad is
+   static, sustained chords; this rolls each one into a
+   root-third-fifth-third arpeggio at a 16th-note subdivision, so the
+   harmony has rhythmic life instead of just sitting under the melody.
+3. **Add a pulse** — `add_percussion()`. A minimal rhythm-section layer: a
+   soft tick on every word, a stronger hit on every sentence, a crash on
+   the final phrase.
+4. **Stage the entrances** — `progressive_arrangement()`. The technique
+   that actually makes an arrangement feel like it goes somewhere: layers
+   1-3 don't all play from bar one. The piece opens with just melody and
+   bass, the harmony pad enters at the second sentence, the countermelody
+   and arpeggio at the third, and percussion only for the final phrase —
+   the same build shape film scores and electronic production both lean
+   on.
+
+Each of the four functions returns a *new* `Score`; none of them mutate
+`compose()`'s output, so the plain 3-track piece is always still available
+by simply not calling `arrange`.
+
+A related, separate knob: melody pitch is chromatic by default (see
+[the pitch encoding](#how-it-works) above) — deliberately, since that
+friction against the diatonic harmony is the original piece's character,
+not a flaw to fix. `--tonal` (`compose(..., tonal=True)`) is the opt-in
+alternative: `harmony.snap_to_scale()` pulls every melody note onto the
+chosen key's scale, same rhythm and contour, fully consonant with the
+chords underneath. `entropy` above uses it; `manifesto` doesn't, so the
+two demo pieces show both.
+
+One correctness note from building this: naively chaining "move each chord
+voice to the nearest instance of its next pitch class" chord after chord
+gives smooth *local* voice leading, but with nothing pulling a voice back
+toward its home register, it can drift a bass line steadily downward over
+a long piece with no bound. `harmony.bounded_nearest_pitch()` anchors each
+voice to its fixed home-octave position and caps how far a step is allowed
+to wander from it, keeping the smooth motion without the drift.
 
 ## What's actually inside
 
@@ -112,7 +173,12 @@ TensorFlow and PyTorch, and neither is used anywhere in this codebase:
   later, it belongs here as an alternative backend to `harmony.py`, not a
   rewrite of it.
 - **Audio synthesis is deterministic DSP**: sine-harmonic additive
-  synthesis with an ADSR envelope, not a sample library.
+  synthesis with an ADSR envelope for pitched voices, noise/pitch-envelope
+  synthesis for percussion — not a sample library.
+- **The arrangement layer is rule-based arranging, not composition AI**:
+  countermelody is a fixed parallel-third transposition, the arpeggio is a
+  fixed broken-chord pattern, percussion follows a fixed word/sentence
+  rule, and the "build" is staged by phrase index. Real techniques, hand-specified.
 
 None of that makes the piece less real — a Markov chain reweighted by
 melody fit is a genuine generative-music technique, and letter-entropy
@@ -128,9 +194,21 @@ promised, now actually implemented.
 ## Project layout
 
 ```
-neurosonix/        the current engine (this README describes it)
+neurosonix/        the current engine
+  encoding.py         text -> chromatic pitch (the original rule)
+  rhythm.py           letter-entropy -> note duration
+  dynamics.py         sentence-arc -> velocity
+  harmony.py          Markov chord progression + voice leading
+  compose.py          orchestrates the four modules above into one Score
+  arrange.py          the advanced-arrangement pass (see above)
+  render_midi.py      Score -> .mid
+  synth.py            Score -> .wav (built-in additive/noise synth)
+  visualize.py        Score -> .png piano roll
+  web_export.py       Score -> .web.json for outputs/player.html
+  cli.py              `compose` / `batch` commands
 examples/           input texts for the two demo pieces
-outputs/            their rendered .mid / .wav / .mp3 / .png / .json
+outputs/            their rendered .mid / .wav / .mp3 / .png / .json /
+                    .web.json, the data bundle, and player.html itself
 Code/legacy/        the original 2024 prototype scripts, kept for history
 Audio/ Midi/ Score/ Sheet/   the original "A Missing Camera" piece and its
                     finished audio, score, and sheet music

@@ -39,7 +39,16 @@ class Score:
 
 
 def compose(text: str, tempo_bpm: float = 96.0, key: harmony.Key | None = None,
-             harmony_octave: int = 3, bass_octave: int = 1, seed: int | None = None) -> Score:
+             harmony_octave: int = 3, bass_octave: int = 1, seed: int | None = None,
+             tonal: bool = False) -> Score:
+    """
+    tonal: the melody is chromatic by default -- letters run across all 12
+    semitones while the harmony sits on 7, and that friction is the
+    original piece's character, not a flaw. Set tonal=True to instead snap
+    every melody note onto the chosen key's scale (see
+    harmony.snap_to_scale): same rhythm and contour, fully consonant with
+    the chords underneath.
+    """
     if not text.strip():
         raise ValueError("text is empty")
     key = key or harmony.Key(tonic_pc=0, mode='major')  # C major default
@@ -47,7 +56,6 @@ def compose(text: str, tempo_bpm: float = 96.0, key: harmony.Key | None = None,
     phrases = encoding.tokenize(text)
     melody: list[NoteEvent] = []
     cursor = 0.0
-    melody_pitch_classes: list[int] = []
     harmony_slots: list[tuple[float, float, int]] = []  # start, duration, melody_pc -- one per word
 
     for phrase in phrases:
@@ -65,9 +73,9 @@ def compose(text: str, tempo_bpm: float = 96.0, key: harmony.Key | None = None,
 
             dur_beats = rhythm.letter_duration_beats(tok.char)
             vel = dynamics.token_velocity(tok.position_in_sentence, tok.is_word_start, tok.is_upper)
-            melody.append(NoteEvent(cursor, dur_beats * 0.92, tok.midi_note, vel, tok.char))
-            melody_pitch_classes.append(tok.midi_note % 12)
-            word_pitch_classes.append(tok.midi_note % 12)
+            note = harmony.snap_to_scale(tok.midi_note, key) if tonal else tok.midi_note
+            melody.append(NoteEvent(cursor, dur_beats * 0.92, note, vel, tok.char))
+            word_pitch_classes.append(note % 12)
             cursor += dur_beats
 
         if word_pitch_classes:
@@ -80,18 +88,30 @@ def compose(text: str, tempo_bpm: float = 96.0, key: harmony.Key | None = None,
         else:
             cursor += rhythm.word_gap_beats()
 
-    # --- harmony: one Markov-sampled chord per word, biased by that word's melody
+    # --- harmony: one Markov-sampled chord per word, biased by that word's melody.
+    # Each chord voice-leads from the previous one (chord_midi_notes(prev=...))
+    # instead of resetting to a fixed octave every time, so the pad and bass
+    # glide by a few semitones per chord rather than jumping registers.
     degrees = harmony.generate_progression(key, [pc for _, _, pc in harmony_slots], seed=seed)
     harmony_track: list[NoteEvent] = []
     bass_track: list[NoteEvent] = []
     chord_progression: list[tuple[float, float, int]] = []
+    prev_triad = None
+    prev_bass = None
+    bass_anchor = 12 * (bass_octave + 1)
     for (start, dur, _pc), degree in zip(harmony_slots, degrees):
-        root, third, fifth = harmony.chord_midi_notes(key, degree, octave=harmony_octave)
-        bass_root, _, _ = harmony.chord_midi_notes(key, degree, octave=bass_octave)
+        triad = harmony.chord_midi_notes(key, degree, octave=harmony_octave, prev=prev_triad)
+        bass_root_pc = key.diatonic_triad(degree)[0]
+        if prev_bass is None:
+            bass_note = harmony.nearest_pitch(bass_root_pc, bass_anchor)
+        else:
+            bass_note = harmony.bounded_nearest_pitch(bass_root_pc, prev_bass, bass_anchor)
+        prev_triad, prev_bass = triad, bass_note
+
         pad_dur = max(dur * 0.94, 0.1)
-        for note in (root, third, fifth):
+        for note in triad:
             harmony_track.append(NoteEvent(start, pad_dur, note, 46))
-        bass_track.append(NoteEvent(start, pad_dur, bass_root, 58))
+        bass_track.append(NoteEvent(start, pad_dur, bass_note, 58))
         chord_progression.append((start, dur, degree))
 
     score = Score(text=text, tempo_bpm=tempo_bpm, key=key)
