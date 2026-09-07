@@ -16,11 +16,23 @@ from dataclasses import dataclass
 
 PITCH_CLASS_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
-MAJOR_SCALE_STEPS = [0, 2, 4, 5, 7, 9, 11]
-MINOR_SCALE_STEPS = [0, 2, 3, 5, 7, 8, 10]
+# the seven diatonic modes -- all seven rotations of the same major-scale
+# interval pattern, starting from a different degree each time. 'major' and
+# 'minor' are the familiar names for ionian and aeolian.
+MODE_STEPS = {
+    'ionian':     [0, 2, 4, 5, 7, 9, 11],
+    'dorian':     [0, 2, 3, 5, 7, 9, 10],
+    'phrygian':   [0, 1, 3, 5, 7, 8, 10],
+    'lydian':     [0, 2, 4, 6, 7, 9, 11],
+    'mixolydian': [0, 2, 4, 5, 7, 9, 10],
+    'aeolian':    [0, 2, 3, 5, 7, 8, 10],
+    'locrian':    [0, 1, 3, 5, 6, 8, 10],
+}
+MODE_ALIASES = {'major': 'ionian', 'minor': 'aeolian'}
+MODE_NAMES = list(MODE_STEPS)  # canonical order, for cycling through all seven
+MODE_DISPLAY_NAMES = {'ionian': 'major', 'aeolian': 'minor'}  # for Key.name()
 
-ROMAN_MAJOR = ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°']
-ROMAN_MINOR = ['i', 'ii°', 'III', 'iv', 'v', 'VI', 'VII']
+ROMAN_BASE = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII']
 
 # Row i = current scale-degree chord (0-indexed I..vii), values = relative
 # likelihood of moving to each of the 7 diatonic chords next. Encodes
@@ -40,15 +52,16 @@ TRANSITION_WEIGHTS = [
 @dataclass
 class Key:
     tonic_pc: int  # 0-11, pitch class
-    mode: str      # 'major' or 'minor'
+    mode: str      # any of MODE_STEPS, or the aliases 'major'/'minor'
+
+    def __post_init__(self):
+        self.mode = MODE_ALIASES.get(self.mode, self.mode)
+        if self.mode not in MODE_STEPS:
+            raise ValueError(f"unknown mode: {self.mode!r} (try one of {MODE_NAMES})")
 
     @property
     def steps(self) -> list[int]:
-        return MAJOR_SCALE_STEPS if self.mode == 'major' else MINOR_SCALE_STEPS
-
-    @property
-    def roman_numerals(self) -> list[str]:
-        return ROMAN_MAJOR if self.mode == 'major' else ROMAN_MINOR
+        return MODE_STEPS[self.mode]
 
     def scale_pitch_classes(self) -> list[int]:
         return [(self.tonic_pc + s) % 12 for s in self.steps]
@@ -61,8 +74,28 @@ class Key:
         fifth = scale[(degree + 4) % 7]
         return (root, third, fifth)
 
+    def chord_label(self, degree: int) -> str:
+        """Roman numeral for the triad on `degree`, quality computed from its
+        actual intervals rather than looked up from a major/minor table --
+        so it's correct for any of the seven modes automatically. A major
+        third above the root capitalizes the numeral, a diminished fifth
+        adds '°', an augmented fifth adds '+'."""
+        root, third, fifth = self.diatonic_triad(degree)
+        third_interval = (third - root) % 12
+        fifth_interval = (fifth - root) % 12
+        numeral = ROMAN_BASE[degree % 7]
+        label = numeral if third_interval == 4 else numeral.lower()
+        if fifth_interval == 6:
+            label += '°'
+        elif fifth_interval == 8:
+            label += '+'
+        return label
+
     def name(self) -> str:
-        return f"{PITCH_CLASS_NAMES[self.tonic_pc]} {self.mode}"
+        # 'ionian'/'aeolian' are technically correct but 'major'/'minor' is
+        # what everyone actually reads for the two everyday modes
+        display_mode = MODE_DISPLAY_NAMES.get(self.mode, self.mode)
+        return f"{PITCH_CLASS_NAMES[self.tonic_pc]} {display_mode}"
 
 
 def snap_to_scale(midi_note: int, key: Key) -> int:
@@ -91,14 +124,23 @@ def _consonance(chord_tones: tuple[int, int, int], melody_pc: int) -> float:
     return max(0.15, 1.0 - min(dists) / 6)
 
 
-def generate_progression(key: Key, melody_pitch_classes: list[int], seed: int | None = None) -> list[int]:
-    """One chord-degree (0-6) per entry in melody_pitch_classes, Markov-sampled
-    and reweighted toward chords that contain (or sit close to) that step's
-    melody note."""
+def generate_progression(steps: list[tuple[int, Key]], seed: int | None = None) -> list[int]:
+    """One chord-degree (0-6) per (melody_pitch_class, key) entry in `steps`,
+    Markov-sampled and reweighted toward chords that contain (or sit close
+    to) that step's melody note in *that step's own key*.
+
+    Each step's key can differ from the last -- that's what lets a piece
+    modulate between scales mid-progression (see compose(modulate=...)).
+    The Markov state (`current`, a scale-degree index 0-6) carries straight
+    across a key change: finishing on "V" of the old key and landing on
+    "V" of the new one reads as a pivot-chord-like modulation rather than
+    a hard cut, since scale-degree function is preserved even though the
+    actual pitches underneath it just shifted.
+    """
     rng = random.Random(seed)
     progression: list[int] = []
     current = 0  # start on the tonic
-    for melody_pc in melody_pitch_classes:
+    for melody_pc, key in steps:
         weights = list(TRANSITION_WEIGHTS[current])
         for degree in range(7):
             tones = key.diatonic_triad(degree)

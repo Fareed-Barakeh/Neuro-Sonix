@@ -2,6 +2,7 @@
 
     python -m neurosonix compose "Some text to sonify." --out outputs/demo
     python -m neurosonix compose "Some text." --out outputs/demo --arrange --tonal
+    python -m neurosonix compose "Some text." --out outputs/demo --modulate dorian,mixolydian,lydian,aeolian
     python -m neurosonix batch examples/ --out outputs/ --arrange
 
 Each run produces a .mid (playable in any DAW), a .wav (listen immediately,
@@ -9,7 +10,10 @@ no synth/soundfont needed), a .png piano-roll, and a .web.json for the
 browser player. --arrange adds a full arrangement (parallel-harmony
 countermelody, arpeggiated chords, a percussion layer that builds in
 across the piece) on top of the base melody/harmony/bass; --tonal snaps
-the melody onto the chosen key's scale instead of staying fully chromatic.
+the melody onto its active scale instead of staying fully chromatic;
+--modulate cycles the harmony (and, with --tonal, the melody) through a
+list of modes sharing --key's tonic, one per sentence, instead of staying
+in a single scale for the whole piece.
 """
 from __future__ import annotations
 
@@ -35,12 +39,27 @@ def _parse_key(key_str: str) -> harmony.Key:
     return harmony.Key(tonic_pc=NOTE_NAMES.index(root), mode=mode)
 
 
+def _parse_modulate(modulate_str: str, tonic_pc: int) -> list[harmony.Key]:
+    """A comma-separated list of mode names, all sharing one tonic pitch
+    class -- modal interchange: 'D dorian -> D mixolydian -> D aeolian',
+    not a full key change each time."""
+    modes = [m.strip().lower() for m in modulate_str.split(',') if m.strip()]
+    keys = []
+    for m in modes:
+        canonical = harmony.MODE_ALIASES.get(m, m)
+        if canonical not in harmony.MODE_STEPS:
+            raise ValueError(f"unrecognized mode: {m!r} (try one of {harmony.MODE_NAMES})")
+        keys.append(harmony.Key(tonic_pc=tonic_pc, mode=canonical))
+    return keys
+
+
 def _run_one(text: str, out_stem: pathlib.Path, tempo: float, key_str: str, seed: int | None,
-              arranged: bool, tonal: bool) -> dict:
+              arranged: bool, tonal: bool, modulate_str: str | None) -> dict:
     key = _parse_key(key_str)
-    score = compose(text, tempo_bpm=tempo, key=key, seed=seed, tonal=tonal)
+    modulate = _parse_modulate(modulate_str, key.tonic_pc) if modulate_str else None
+    score = compose(text, tempo_bpm=tempo, key=key, seed=seed, tonal=tonal, modulate=modulate)
     if arranged:
-        score = arrange.progressive_arrangement(score, key)
+        score = arrange.progressive_arrangement(score)
 
     out_stem.parent.mkdir(parents=True, exist_ok=True)
     midi_path = out_stem.with_suffix('.mid')
@@ -54,16 +73,18 @@ def _run_one(text: str, out_stem: pathlib.Path, tempo: float, key_str: str, seed
     visualize.plot(score, title=out_stem.name.replace('_', ' ').title(), out_path=str(png_path))
     web_export.save(score, str(web_path), title=out_stem.name.replace('_', ' ').title())
 
+    distinct_keys = list(dict.fromkeys(c.key.name() for c in score.chord_progression))
     analysis = {
         'text': text,
         'key': key.name(),
+        'scales_used': distinct_keys,
         'tempo_bpm': tempo,
         'arranged': arranged,
         'tonal': tonal,
         'tracks': sorted(score.tracks.keys()),
         'letters_sonified': len(score.tracks['melody']),
         'duration_seconds': round(score.length_seconds, 2),
-        'chord_progression': [score.key.roman_numerals[d] for _, _, d in score.chord_progression],
+        'chord_progression': [c.key.chord_label(c.degree) for c in score.chord_progression],
     }
     json_path.write_text(json.dumps(analysis, indent=2))
     return analysis
@@ -84,7 +105,10 @@ def main(argv: list[str] | None = None) -> int:
     p_compose.add_argument('--arrange', action='store_true',
                              help='add countermelody, arpeggio, and a building percussion layer')
     p_compose.add_argument('--tonal', action='store_true',
-                             help='snap the melody onto the chosen scale instead of staying chromatic')
+                             help='snap the melody onto its active scale instead of staying chromatic')
+    p_compose.add_argument('--modulate', default=None,
+                             help='comma-separated modes to cycle through per sentence, e.g. '
+                                  'dorian,mixolydian,lydian,aeolian (shares --key\'s tonic)')
 
     p_batch = sub.add_parser('batch', help='sonify every .txt file in a folder')
     p_batch.add_argument('input_dir')
@@ -94,13 +118,14 @@ def main(argv: list[str] | None = None) -> int:
     p_batch.add_argument('--seed', type=int, default=None)
     p_batch.add_argument('--arrange', action='store_true')
     p_batch.add_argument('--tonal', action='store_true')
+    p_batch.add_argument('--modulate', default=None)
 
     args = parser.parse_args(argv)
 
     if args.command == 'compose':
         text = pathlib.Path(args.file).read_text() if args.file else args.text
         analysis = _run_one(text, pathlib.Path(args.out), args.tempo, args.key, args.seed,
-                              args.arrange, args.tonal)
+                              args.arrange, args.tonal, args.modulate)
         print(json.dumps(analysis, indent=2))
 
     elif args.command == 'batch':
@@ -114,16 +139,16 @@ def main(argv: list[str] | None = None) -> int:
         for f in txt_files:
             text = f.read_text()
             analysis = _run_one(text, out_dir / f.stem, args.tempo, args.key, args.seed,
-                                  args.arrange, args.tonal)
+                                  args.arrange, args.tonal, args.modulate)
             print(f'{f.name}: {analysis["letters_sonified"]} letters, '
                    f'{analysis["duration_seconds"]}s -> {out_dir / f.stem}.{{mid,wav,png,json,web.json}}')
             web_json_paths[f.stem] = str((out_dir / f.stem).with_suffix('.web.json'))
 
         # keep the interactive player's data bundle in sync with whatever
-        # batch just (re)rendered -- see web/player.html
+        # batch just (re)rendered -- see outputs/player.html
         bundle_path = out_dir / 'neurosonix-data.js'
         web_export.bundle(web_json_paths, str(bundle_path))
-        print(f'-> {bundle_path} (player data bundle for web/player.html)')
+        print(f'-> {bundle_path} (player data bundle for outputs/player.html)')
 
     return 0
 

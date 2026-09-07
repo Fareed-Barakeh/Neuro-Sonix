@@ -18,18 +18,19 @@ below, since the original README overstated the AI involved.
 ## Listen — and play
 
 **[Open the interactive player](outputs/player.html)** — a browser page (no
-install, no server) that plays either demo piece back with a synced,
-animated piano roll and the source text highlighted letter by letter as it
-sounds, karaoke-style.
+install, no server) that plays any of the three demo pieces back with a
+synced, animated piano roll and the source text highlighted letter by
+letter as it sounds, karaoke-style.
 
-Two demonstration pieces, both fully arranged (see
+Three demonstration pieces, all fully arranged (see
 [Advanced arrangement](#advanced-arrangement) below) and in [`outputs/`](outputs/),
 generated straight from the text files in [`examples/`](examples/):
 
-| Piece | Text | Key | Melody | Listen |
-|---|---|---|---|---|
-| `manifesto` | [`examples/manifesto.txt`](examples/manifesto.txt) — a short statement of what this project is | D minor | chromatic (default) | [outputs/manifesto.mp3](outputs/manifesto.mp3) |
-| `entropy` | [`examples/entropy.txt`](examples/entropy.txt) — on how rare letters get emphasized | D minor | tonal (`--tonal`) | [outputs/entropy.mp3](outputs/entropy.mp3) |
+| Piece | Text | Scale | Listen |
+|---|---|---|---|
+| `manifesto` | [`examples/manifesto.txt`](examples/manifesto.txt) — a short statement of what this project is | D minor, chromatic melody (default) | [outputs/manifesto.mp3](outputs/manifesto.mp3) |
+| `entropy` | [`examples/entropy.txt`](examples/entropy.txt) — on how rare letters get emphasized | D minor, tonal melody (`--tonal`) | [outputs/entropy.mp3](outputs/entropy.mp3) |
+| `modulation` | [`examples/modulation.txt`](examples/modulation.txt) — on how the same words read differently depending on the scale they're heard in | D, six modes in sequence (`--modulate`, see below) | [outputs/modulation.mp3](outputs/modulation.mp3) |
 
 Each also has a `.mid` (open it in any DAW or notation program), a `.wav`
 (the same audio, uncompressed), a `.png` piano roll, and a `.web.json` (the
@@ -48,6 +49,11 @@ python -m neurosonix compose "Some text to sonify." --out outputs/mine --key Am 
 python -m neurosonix compose "Some text." --out outputs/mine --arrange --tonal
 # -> the same, plus a countermelody, arpeggio, and percussion layer (--arrange),
 #    with the melody snapped onto the chosen scale instead of staying chromatic (--tonal)
+
+python -m neurosonix compose "Some text." --out outputs/mine --arrange --tonal \
+  --modulate dorian,phrygian,aeolian,mixolydian,lydian,ionian
+# -> cycles the harmony (and melody, since --tonal) through those six modes,
+#    one per sentence, sharing --key's tonic (modal interchange)
 
 python -m neurosonix batch examples/ --out outputs/ --arrange
 # -> sonifies every .txt file in examples/, and refreshes outputs/neurosonix-data.js
@@ -141,10 +147,10 @@ A related, separate knob: melody pitch is chromatic by default (see
 [the pitch encoding](#how-it-works) above) — deliberately, since that
 friction against the diatonic harmony is the original piece's character,
 not a flaw to fix. `--tonal` (`compose(..., tonal=True)`) is the opt-in
-alternative: `harmony.snap_to_scale()` pulls every melody note onto the
-chosen key's scale, same rhythm and contour, fully consonant with the
-chords underneath. `entropy` above uses it; `manifesto` doesn't, so the
-two demo pieces show both.
+alternative: `harmony.snap_to_scale()` pulls every melody note onto its
+active scale, same rhythm and contour, fully consonant with the chords
+underneath. `entropy` above uses it; `manifesto` doesn't, so the two
+pieces show both.
 
 One correctness note from building this: naively chaining "move each chord
 voice to the nearest instance of its next pitch class" chord after chord
@@ -153,6 +159,36 @@ toward its home register, it can drift a bass line steadily downward over
 a long piece with no bound. `harmony.bounded_nearest_pitch()` anchors each
 voice to its fixed home-octave position and caps how far a step is allowed
 to wander from it, keeping the smooth motion without the drift.
+
+## Scales and modulation
+
+`harmony.Key` isn't limited to major/minor — it supports all seven
+diatonic modes (`ionian`/`major`, `dorian`, `phrygian`, `lydian`,
+`mixolydian`, `aeolian`/`minor`, `locrian`), and chord quality (whether a
+roman numeral prints upper-case, lower-case, or gets a `°`/`+`) is
+computed from each triad's actual intervals rather than looked up from a
+fixed major/minor table — so it's correct automatically for any mode, not
+just the two everyone already had covered.
+
+`--modulate dorian,mixolydian,lydian,aeolian` (or
+`compose(..., modulate=[...])` with a list of `Key`s from Python) cycles
+the harmony through those modes one per sentence, instead of staying in a
+single scale for the whole piece. Given `--key`, every mode in the list
+shares its tonic pitch class — this is modal interchange (D dorian → D
+mixolydian → D aeolian: the "D" stays fixed, only the color around it
+shifts), not a full key change every sentence, which is what keeps a
+modulating piece sounding like one continuous idea instead of six
+unrelated fragments stitched together. With `--tonal` on too, the melody
+modulates right along with the harmony. `modulation` above cycles through
+all six non-locrian modes across its six sentences; both the piano roll
+and the interactive player mark every scale change with a dashed line and
+the new key's name.
+
+The Markov chain's state (which scale degree the harmony is "on") carries
+straight across a modulation: finishing a phrase on the 5th degree of the
+old mode and landing on the 5th degree of the new one reads as a
+pivot-chord-like transition rather than a hard cut, because scale-degree
+function is preserved even though the pitches underneath just moved.
 
 ## What's actually inside
 
@@ -206,7 +242,7 @@ neurosonix/        the current engine
   visualize.py        Score -> .png piano roll
   web_export.py       Score -> .web.json for outputs/player.html
   cli.py              `compose` / `batch` commands
-examples/           input texts for the two demo pieces
+examples/           input texts for the three demo pieces
 outputs/            their rendered .mid / .wav / .mp3 / .png / .json /
                     .web.json, the data bundle, and player.html itself
 Code/legacy/        the original 2024 prototype scripts, kept for history

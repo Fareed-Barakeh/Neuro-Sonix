@@ -1,6 +1,9 @@
 {
   "text": "Language becomes an instrument. Every letter you type is already a pitch, a duration, a gesture waiting to be heard. NeuroSonix does not illustrate text with sound; it insists that text was musical all along, and simply plays what was already written.",
   "key": "D minor",
+  "scales_used": [
+    "D minor"
+  ],
   "tempo_bpm": 92.0,
   "arranged": true,
   "tonal": false,

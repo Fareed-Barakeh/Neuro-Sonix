@@ -1,6 +1,9 @@
 {
   "text": "The common letters rush past like breath. The rare ones, Q and X and Z, hold the room a little longer, because rarity is what a sentence spends its attention on. An alphabet is already a scale, running from silence up to signal.",
   "key": "D minor",
+  "scales_used": [
+    "D minor"
+  ],
   "tempo_bpm": 96.0,
   "arranged": true,
   "tonal": true,

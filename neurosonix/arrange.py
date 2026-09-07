@@ -50,15 +50,29 @@ COUNTERMELODY_INTERVAL = -3  # a third below the lead
 GM_KICK, GM_HIHAT, GM_CRASH = 36, 42, 49
 
 
-def add_countermelody(score: Score, key: harmony.Key, interval: int = COUNTERMELODY_INTERVAL) -> Score:
-    """A second voice in parallel harmony with the lead, on accented notes only."""
+def _key_at(score: Score, beat: float) -> harmony.Key:
+    """Whichever chord's key is sounding at `beat` -- the local key for a
+    modulating piece, or just the one key for a piece that isn't."""
+    active = score.key
+    for chord in score.chord_progression:
+        if chord.start_beat <= beat:
+            active = chord.key
+        else:
+            break
+    return active
+
+
+def add_countermelody(score: Score, interval: int = COUNTERMELODY_INTERVAL) -> Score:
+    """A second voice in parallel harmony with the lead, on accented notes
+    only. Snaps to whichever key is active at each note's own position, so
+    this stays diatonic even through a modulation."""
     out = copy.deepcopy(score)
     counter: list[NoteEvent] = []
     for ev in score.tracks['melody']:
         if ev.velocity < 78:  # only the notes the phrase-arc/accent rules already emphasized
             continue
         raw = ev.midi_note + interval
-        note = harmony.snap_to_scale(raw, key)  # keep the harmony line diatonic even in tonal-off pieces
+        note = harmony.snap_to_scale(raw, _key_at(score, ev.start_beat))
         counter.append(NoteEvent(ev.start_beat, ev.duration_beat, note, max(1, ev.velocity - 22), ev.char))
     out.tracks['countermelody'] = counter
     return out
@@ -91,7 +105,7 @@ def add_percussion(score: Score) -> Score:
     """A soft tick per word, a stronger hit per sentence, a crash on the last phrase."""
     out = copy.deepcopy(score)
     perc: list[NoteEvent] = []
-    word_starts = sorted({start for start, _dur, _pc in _word_slots(score)})
+    word_starts = sorted({c.start_beat for c in _word_slots(score)})
     for beat in word_starts:
         perc.append(NoteEvent(beat, 0.12, GM_HIHAT, 46, ''))
     sentence_starts = _sentence_starts(score)
@@ -103,8 +117,8 @@ def add_percussion(score: Score) -> Score:
     return out
 
 
-def _word_slots(score: Score) -> list[tuple[float, float, int]]:
-    # chord_progression already carries one (start, dur, degree) entry per word
+def _word_slots(score: Score):
+    # chord_progression already carries one ChordEvent per word
     return score.chord_progression
 
 
@@ -122,12 +136,12 @@ def _sentence_starts(score: Score) -> list[float]:
     return starts
 
 
-def progressive_arrangement(score: Score, key: harmony.Key) -> Score:
+def progressive_arrangement(score: Score) -> Score:
     """Stage 1-3 in across the piece instead of all at once: melody + bass
     open it, the harmony pad enters at the second phrase, arpeggio and
     countermelody at the third, and percussion only for the final phrase.
     """
-    arranged = add_percussion(add_arpeggio(add_countermelody(score, key), pattern=(0, 1, 2, 1)))
+    arranged = add_percussion(add_arpeggio(add_countermelody(score), pattern=(0, 1, 2, 1)))
     sentence_starts = _sentence_starts(score)
     n = len(sentence_starts)
 

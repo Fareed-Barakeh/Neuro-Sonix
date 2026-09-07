@@ -36,12 +36,19 @@ def plot(score: Score, title: str | None = None, out_path: str | None = None):
     perc_lane_y = lo - 3.5
     plot_lo = perc_lane_y - 1.5 if has_percussion else lo
 
-    # chord-region shading, lightly, with roman-numeral labels
-    for start, dur, degree in score.chord_progression:
-        ax.add_patch(Rectangle((start, plot_lo), dur, (hi + 1.5) - plot_lo, facecolor=COLORS['harmony'],
-                                 alpha=0.05, linewidth=0, zorder=0))
-        ax.text(start + dur / 2, hi - 0.6, score.key.roman_numerals[degree],
+    # chord-region shading, lightly, with roman-numeral labels (computed
+    # from each chord's own key, so this is correct even mid-modulation)
+    prev_key_name = None
+    for chord in score.chord_progression:
+        ax.add_patch(Rectangle((chord.start_beat, plot_lo), chord.duration_beat, (hi + 1.5) - plot_lo,
+                                 facecolor=COLORS['harmony'], alpha=0.05, linewidth=0, zorder=0))
+        ax.text(chord.start_beat + chord.duration_beat / 2, hi - 0.6, chord.key.chord_label(chord.degree),
                  color='#c9946b', fontsize=8.5, ha='center', va='top', alpha=0.85)
+        if chord.key.name() != prev_key_name:
+            ax.axvline(chord.start_beat, color='#5a5f6e', linewidth=1, linestyle=':', alpha=0.7, zorder=1)
+            ax.text(chord.start_beat + 0.1, hi + 1.1, chord.key.name(), color='#8f96a8',
+                     fontsize=8, ha='left', va='top', style='italic')
+            prev_key_name = chord.key.name()
 
     for voice in pitched_tracks:  # bass under, melody on top
         color = COLORS[voice]
@@ -102,10 +109,13 @@ def plot(score: Score, title: str | None = None, out_path: str | None = None):
     legend.get_frame().set_edgecolor('#2c2e36')
     legend.get_frame().set_alpha(0.92)
 
+    distinct_keys = list(dict.fromkeys(c.key.name() for c in score.chord_progression))
+    key_label = distinct_keys[0] if len(distinct_keys) <= 1 else f'{distinct_keys[0]} → {len(distinct_keys)} scales'
+
     ax.set_title(title or 'NeuroSonix Piano Roll', color='white', fontsize=19,
                   pad=16, loc='left', fontweight='bold')
     fig.text(0.1, 0.925,
-             f'Key: {score.key.name()}  ·  Tempo: {score.tempo_bpm:.0f} BPM  ·  '
+             f'Key: {key_label}  ·  Tempo: {score.tempo_bpm:.0f} BPM  ·  '
              f'{len(score.tracks["melody"])} letters sonified',
              color='#9a9a9a', fontsize=10.5)
 

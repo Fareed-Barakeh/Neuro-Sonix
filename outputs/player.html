@@ -118,7 +118,6 @@
 <script src="neurosonix-data.js"></script>
 <script>
 (function () {
-  const AUDIO_SRC = { manifesto: 'manifesto.mp3', entropy: 'entropy.mp3' };
   const TRACK_COLOR = {
     melody: 'var(--melody)', harmony: 'var(--harmony)', bass: 'var(--bass)',
     countermelody: 'var(--countermelody)', arpeggio: 'var(--arpeggio)',
@@ -199,6 +198,22 @@
     piece.chords.forEach(c => {
       ctx.fillText(c.roman, geo.beatX(c.start) + 2, geo.topMargin + 10);
     });
+
+    // mark scale changes, if this piece modulates
+    let prevKey = null;
+    ctx.strokeStyle = '#5a5f6e';
+    ctx.setLineDash([3, 3]);
+    ctx.font = 'italic 9px ui-monospace, monospace';
+    piece.chords.forEach(c => {
+      if (c.key !== prevKey) {
+        const x = geo.beatX(c.start);
+        ctx.beginPath(); ctx.moveTo(x, geo.topMargin); ctx.lineTo(x, geo.topMargin + geo.rollH); ctx.stroke();
+        ctx.fillStyle = '#8f96a8';
+        ctx.fillText(c.key, x + 3, geo.topMargin - 4);
+        prevKey = c.key;
+      }
+    });
+    ctx.setLineDash([]);
 
     // pitched tracks
     geo.pitched.forEach(t => {
@@ -291,7 +306,7 @@
     buildLyric(current);
     metaEl.textContent = `Key: ${current.key}  ·  Tempo: ${Math.round(current.tempo_bpm)} BPM  ·  ` +
       `${current.tracks.melody.length} letters  ·  ${fmtTime(current.length_seconds)}`;
-    audio.src = AUDIO_SRC[id];
+    audio.src = id + '.mp3';  // <piece-id>.mp3 sits alongside this page and neurosonix-data.js
     audio.pause();
     playBtn.textContent = '▶';
     scrubber.value = 0;

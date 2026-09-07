@@ -12,10 +12,12 @@ from .compose import Score
 
 
 def to_dict(score: Score, title: str = '') -> dict:
+    distinct_keys = list(dict.fromkeys(c.key.name() for c in score.chord_progression))
+    key_label = distinct_keys[0] if len(distinct_keys) <= 1 else f'{distinct_keys[0]} → {len(distinct_keys)} scales'
     return {
         'title': title,
         'text': score.text,
-        'key': score.key.name(),
+        'key': key_label or score.key.name(),
         'tempo_bpm': score.tempo_bpm,
         'length_beats': score.length_beats,
         'length_seconds': score.length_seconds,
@@ -28,8 +30,9 @@ def to_dict(score: Score, title: str = '') -> dict:
             for voice, events in score.tracks.items()
         },
         'chords': [
-            {'start': start, 'dur': dur, 'roman': score.key.roman_numerals[degree]}
-            for start, dur, degree in score.chord_progression
+            {'start': c.start_beat, 'dur': c.duration_beat, 'roman': c.key.chord_label(c.degree),
+             'key': c.key.name()}
+            for c in score.chord_progression
         ],
     }
 
