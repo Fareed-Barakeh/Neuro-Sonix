@@ -40,7 +40,7 @@ from __future__ import annotations
 import wave
 
 import numpy as np
-from scipy.signal import lfilter
+from scipy.signal import butter, lfilter
 
 from .compose import Score
 
@@ -57,7 +57,7 @@ TIMBRES = {
                             tremolo_depth=0.050, tremolo_rate=2.8),
     'bass':          dict(harmonics=[1.0, 0.15, 0.04], attack=0.02, decay=0.10,
                             sustain=0.82, release=0.28, vibrato_rate=0, vibrato_depth=0,
-                            vibrato_onset=0, unison_cents=[0], drive=0.9, breath=0,
+                            vibrato_onset=0, unison_cents=[0], drive=0.5, breath=0,
                             tremolo_depth=0.018, tremolo_rate=3.6),
     'countermelody': dict(harmonics=[1.0, 0.18, 0.22, 0.04], attack=0.06, decay=0.16,
                             sustain=0.60, release=0.42, vibrato_rate=4.2, vibrato_depth=0.0035,
@@ -65,7 +65,7 @@ TIMBRES = {
                             tremolo_depth=0.018, tremolo_rate=3.9),
     'arpeggio':      dict(harmonics=[1.0, 0.50, 0.30, 0.16, 0.08], attack=0.01, decay=0.40,
                             sustain=0.05, release=0.50, vibrato_rate=0, vibrato_depth=0,
-                            vibrato_onset=0, unison_cents=[-6, 0, 6], drive=0, breath=0,
+                            vibrato_onset=0, unison_cents=[-4, 4], drive=0, breath=0,
                             tremolo_depth=0, tremolo_rate=0),
 }
 
@@ -191,9 +191,9 @@ def _render_drum(note: int, velocity: int) -> np.ndarray:
         tone /= sum(a for _, a in partials)
         tone_env = np.exp(-t * 1.6)
         noise = rng.standard_normal(n)
-        noise = np.convolve(noise, np.ones(40) / 40, mode='same')  # smooth off the hiss
-        noise_env = np.exp(-t * 2.2)
-        return (tone * tone_env * 0.8 + noise * noise_env * 0.22) * gain * 0.4
+        noise = np.convolve(noise, np.ones(90) / 90, mode='same')  # smooth well past audible hiss
+        noise_env = np.exp(-t * 2.4)
+        return (tone * tone_env * 0.88 + noise * noise_env * 0.10) * gain * 0.4
     if note == GM_KICK:
         n = int(0.16 * SAMPLE_RATE)
         t = np.arange(n) / SAMPLE_RATE
@@ -244,19 +244,41 @@ def _dc_block(x: np.ndarray) -> np.ndarray:
     return lfilter([1.0, -1.0], [1.0, -0.995], x)
 
 
-def _reverb(mono: np.ndarray, room_size: float = 0.90, damping: float = 0.45) -> np.ndarray:
-    out = np.zeros_like(mono)
+def _highpass(x: np.ndarray, cutoff_hz: float, sr: int = SAMPLE_RATE, order: int = 2) -> np.ndarray:
+    """A Butterworth high-pass (12dB/octave at order=2). Everything this
+    engine plays lives in a low register by design -- the chromatic melody
+    never reaches above ~280Hz, and the bass's own fundamental sits around
+    30-65Hz (bass_octave=1) -- so feeding that straight into a reverb/echo
+    just repeats and stacks the same low end on top of itself over and
+    over. A gentler one-pole filter here isn't steep enough to actually
+    clear the bass's fundamental range out of the ambience: at a 200Hz
+    cutoff a one-pole rolloff only attenuates 60Hz by about 10dB, leaving
+    most of a bass note's fundamental still getting piped into the reverb.
+    Real mixing practice is to high-pass an ambience *send* (never the dry
+    signal) so the wash adds space without turning into mud; this is that
+    filter, steep enough to actually do it."""
+    b, a = butter(order, cutoff_hz / (sr / 2), btype='high')
+    return lfilter(b, a, x)
+
+
+def _reverb(mono: np.ndarray, room_size: float = 0.90, damping: float = 0.55) -> np.ndarray:
+    send = _highpass(mono, 240.0)  # keep the wash out of the low end -- see _highpass
+    out = np.zeros_like(send)
     for d in _COMB_DELAYS:
-        out += _comb(mono, d, room_size, damping)
+        out += _comb(send, d, room_size, damping)
     out /= len(_COMB_DELAYS)
     for d in _ALLPASS_DELAYS:
         out = _allpass(out, d)
     return _dc_block(out)
 
 
-def _echo(x: np.ndarray, delay_samples: int, feedback: float = 0.38,
-           damping: float = 0.32, n_repeats: int = 7) -> np.ndarray:
-    """A tempo-synced feedback delay, darkening with each repeat.
+def _echo(x: np.ndarray, delay_samples: int, feedback: float = 0.34,
+           damping: float = 0.40, n_repeats: int = 5) -> np.ndarray:
+    """The delayed repeats only (not `x` itself), tempo-synced, darkening
+    and losing more low end with each one -- a real tape/analog echo is
+    band-limited too, which is most of where its "warm" character comes
+    from, and it keeps the repeats from just re-stacking the same low
+    end forward in time (see _highpass).
 
     Implemented as a handful of shifted, progressively filtered copies
     added together rather than a single long-lag IIR recursion: an actual
@@ -264,21 +286,21 @@ def _echo(x: np.ndarray, delay_samples: int, feedback: float = 0.38,
     thousands of samples long) costs O(n * lag) and would take minutes on
     a full-length piece. Since the *undamped* version of this recursion is
     just y[n] = sum_k feedback^k * x[n - k*delay], summing a handful of
-    shifted-and-scaled copies (with a cheap 2-tap lowpass applied to each
-    successive copy, to darken the repeats) gets the same audible result
-    for a fraction of the cost.
+    shifted-and-scaled copies (with cheap 2-tap filters applied to each
+    successive copy) gets the same audible result for a fraction of the cost.
     """
-    y = x.copy()
-    current = x
+    send = _highpass(x, 220.0)
+    out = np.zeros_like(x)
+    current = send
     for k in range(1, n_repeats + 1):
         if damping > 0:
             current = lfilter([1 - damping], [1, -damping], current)
         current = current * feedback
         shift = k * delay_samples
-        if shift >= len(y):
+        if shift >= len(out):
             break
-        y[shift:] += current[: len(y) - shift]
-    return y
+        out[shift:] += current[: len(out) - shift]
+    return out
 
 
 def _soft_compress(x: np.ndarray, threshold: float = 0.55, ratio: float = 3.0) -> np.ndarray:
@@ -292,8 +314,8 @@ def _soft_compress(x: np.ndarray, threshold: float = 0.55, ratio: float = 3.0) -
 
 
 def render(score: Score, pan_spread: bool = True, humanize: bool = True,
-            reverb_wet: float = 0.30, reverb_predelay_s: float = 0.03,
-            echo_wet: float = 0.20, echo_beats: float = 0.75) -> np.ndarray:
+            reverb_wet: float = 0.17, reverb_predelay_s: float = 0.03,
+            echo_wet: float = 0.09, echo_beats: float = 0.75) -> np.ndarray:
     """Returns a (n_samples, 2) float array in [-1, 1]."""
     total_s = score.length_seconds + 2.6  # room for the longer dreamy tails
     n_total = int(total_s * SAMPLE_RATE) + 1
@@ -347,10 +369,8 @@ def render(score: Score, pan_spread: bool = True, humanize: bool = True,
 
     if echo_wet > 0:
         delay_samples = max(1, int(echo_beats * 60.0 / score.tempo_bpm * SAMPLE_RATE))
-        echo_l = _echo(left, delay_samples)
-        echo_r = _echo(right, delay_samples)
-        left = left + echo_wet * (echo_l - left)
-        right = right + echo_wet * (echo_r - right)
+        left = left + echo_wet * _echo(left, delay_samples)
+        right = right + echo_wet * _echo(right, delay_samples)
 
     if reverb_wet > 0:
         wet = _reverb((left + right) * 0.5)
@@ -367,6 +387,13 @@ def render(score: Score, pan_spread: bool = True, humanize: bool = True,
     # catches all of it.
     left = _dc_block(left)
     right = _dc_block(right)
+
+    # a very gentle master high-pass, well below anything musical here (the
+    # lowest note in this whole system is still well above 30Hz) -- cleans
+    # out inaudible sub-rumble that otherwise just eats headroom and makes
+    # the compressor/normalize react to energy nobody can hear
+    left = _highpass(left, 28.0)
+    right = _highpass(right, 28.0)
 
     stereo = np.stack([left, right], axis=1)
     stereo = _soft_compress(stereo)

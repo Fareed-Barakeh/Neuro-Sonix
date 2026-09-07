@@ -63,9 +63,15 @@ WALKING_BASS_MAIN_FRACTION = 0.72
 
 
 def compose(text: str, tempo_bpm: float = 96.0, key: harmony.Key | None = None,
-             harmony_octave: int = 3, bass_octave: int = 1, seed: int | None = None,
+             harmony_octave: int = 4, bass_octave: int = 1, seed: int | None = None,
              tonal: bool = False, modulate: list[harmony.Key] | None = None) -> Score:
     """
+    harmony_octave/bass_octave: the pad's home octave sits a full octave
+    above the bass's by default (4 vs 1) on purpose -- the melody's own
+    chromatic range (A=C2..Z=C#4) is already low, and stacking the pad's
+    fundamentals right next to the bass's crowds the same narrow low-end
+    band both voices would otherwise fight over.
+
     tonal: the melody is chromatic by default -- letters run across all 12
     semitones while the harmony sits on 7, and that friction is the
     original piece's character, not a flaw. Set tonal=True to instead snap

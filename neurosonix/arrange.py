@@ -5,11 +5,14 @@ one pass. This module is a second, optional pass over that same Score that
 applies four classic arranging techniques, in order:
 
   1. HARMONIZE THE MELODY  -- add_countermelody()
-     A second melodic line moving in parallel with the lead, a third
-     below, sounding only on accented notes (word starts / uppercase) so
+     A second melodic line moving in parallel with the lead, a sixth
+     above, sounding only on accented notes (word starts / uppercase) so
      it reads as emphasis rather than doubling every note. This is the
      oldest harmonization trick in the book: parallel thirds/sixths, the
-     backbone of close vocal harmony.
+     backbone of close vocal harmony -- placed above rather than below the
+     lead here on purpose, since this whole system's pitch range already
+     sits low (see compose.py's harmony_octave/bass_octave note) and
+     stacking a third *voice* underneath would only crowd it further.
 
   2. BREAK THE CHORDS INTO MOTION -- add_arpeggio()
      The harmony pad is static, sustained chords. This turns each chord
@@ -44,7 +47,7 @@ from .compose import NoteEvent, Score
 
 # arpeggio subdivision, in beats (a 16th note at the piece's own tempo)
 ARPEGGIO_STEP = 0.25
-COUNTERMELODY_INTERVAL = -3  # a third below the lead
+COUNTERMELODY_INTERVAL = 9  # a sixth above the lead -- see add_countermelody
 
 # percussion is General MIDI channel 10; these are its fixed key numbers
 GM_CRASH = 49  # the only percussion voice arrange.py uses now -- see add_percussion()

@@ -279,11 +279,15 @@ letting melodic lines linger into their own silences.
 - **Reverb**: an 8-comb/4-allpass algorithmic reverb (the Freeverb design,
   implemented with `scipy.signal.lfilter` so the whole tail renders in a
   handful of calls instead of a Python loop over every sample), tuned
-  larger and darker (`room_size=0.90`, `damping=0.45`) than a plain room,
+  larger and darker (`room_size=0.90`, `damping=0.55`) than a plain room,
   with a short pre-delay (`reverb_predelay_s`) so the dry attack stays
   clear before the wash arrives, gluing the voices into one shared space.
+  Only the send gets a 2nd-order Butterworth high-pass (`_highpass`,
+  240Hz) before it hits the comb bank — never the dry signal — so the
+  bass's own fundamental doesn't get smeared into a low-frequency wash.
 - **Echo**: a tempo-synced (dotted-eighth, `echo_beats=0.75`) feedback
-  delay, darkening with each repeat. A literal long-lag IIR filter here
+  delay, darkening with each repeat (also high-pass filtered on its send,
+  220Hz, for the same reason). A literal long-lag IIR filter here
   would cost O(samples × delay-in-samples) and take minutes on a full
   piece; `synth._echo()` instead sums a handful of shifted, progressively
   filtered copies of the signal, which is mathematically the same result
@@ -292,6 +296,19 @@ letting melodic lines linger into their own silences.
 - **Master bus glue**: a gentle soft-knee compressor ahead of the final
   peak-safe normalize, instead of just scaling everything to the loudest
   sample in the piece.
+- **Kept it clean**: the wet mix is deliberately modest (`reverb_wet=0.17`,
+  `echo_wet=0.09`, down from an earlier, washier pass) because most of
+  what read as "noisy" wasn't the reverb/echo itself — a full-spectrum
+  flatness check showed the signal was already tonal, not broadband-noisy
+  — it was that the reverb/echo sends are a minority of the mix's total
+  energy next to the always-present dry notes, so no amount of send
+  filtering moves the overall balance much. The bigger levers turned out
+  to be the dry mix itself: less wetness outright, the bass's saturation
+  drive pulled back (`drive=0.9` → `0.5`, less tanh-harmonic buzz), and
+  the arpeggio's unison chorus narrowed (three detuned voices → two,
+  `[-6, 0, 6]` → `[-4, 4]`, less beating/roughness) — together dropping
+  the sub-250Hz share of total spectral energy from roughly 80% to the
+  low 60s on all three demo pieces.
 
 **Removed or pulled back, on purpose:** the per-word hi-hat tick is gone
 entirely (a rhythm-section device, not an atmosphere), replaced with a
