@@ -87,15 +87,34 @@ def _midi_to_freq(note: int) -> float:
 
 
 def _adsr(n_samples: int, sr: int, attack: float, decay: float, sustain: float, release: float) -> np.ndarray:
+    """A four-stage envelope shaped to fit the note's own duration, not just
+    its voice's fixed attack/decay/release regardless of how short the note
+    is. A note shorter than attack+decay used to still take the full,
+    absolute attack+decay (and then a full release on top) -- for the pad
+    and bass timbres, whose release alone runs 1.10s/0.28s, that meant even
+    a 30-100ms walking-bass passing tone rang on for the better part of a
+    second, its buffer pasted straight into the timeline (see render())
+    where it overlapped and beat against the next two or three notes. Low
+    voices took the brunt of it: they're both the longest-tailed timbres
+    here and the register where two overlapping pitches fuse least
+    forgivingly, which is what read as "noise" rather than a clean line.
+    Attack/decay now compress proportionally to fit inside the note if they
+    don't already; release still extends past the note for legato bloom,
+    but capped to roughly the note's own length so a short note can't
+    overhang many multiples of itself."""
     a = max(1, int(attack * sr))
     d = max(1, int(decay * sr))
-    r = max(1, int(release * sr))
+    if a + d > n_samples:
+        scale = n_samples / (a + d)
+        a = max(1, int(a * scale))
+        d = max(1, n_samples - a)
     sustain_len = max(0, n_samples - a - d)
     env = np.concatenate([
         np.linspace(0, 1, a, endpoint=False),
         np.linspace(1, sustain, d, endpoint=False),
         np.full(sustain_len, sustain),
     ])
+    r = max(1, min(int(release * sr), max(n_samples, int(0.05 * sr))))
     tail = np.linspace(sustain, 0, r)
     return np.concatenate([env, tail])
 

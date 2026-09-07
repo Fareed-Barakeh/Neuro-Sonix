@@ -310,6 +310,28 @@ letting melodic lines linger into their own silences.
   the sub-250Hz share of total spectral energy from roughly 80% to the
   low 60s on all three demo pieces.
 
+- **The actual bug underneath the noise, found afterward**: `synth._adsr`
+  built attack+decay+release as *absolute* times, independent of how long
+  the note actually was — so a note shorter than that sum still took the
+  voice's full envelope regardless, and it's that oversized buffer (not
+  the note's nominal duration) that gets pasted into the timeline. Harmless
+  for a long-held note, but the pad and bass timbres have long tails
+  (attack+decay+release sums to 1.62s for the pad, 0.40s for the bass) and
+  this system deliberately gives almost every voice short, syllable-length
+  notes — one chord per *word*, letters as short as a 16th note. Checked
+  against the manifesto piece: 100% of melody notes, 94% of harmony-pad
+  notes, and over a third of bass notes were shorter than their voice's
+  fixed envelope, meaning nearly the whole piece was overhanging into the
+  next one to three notes by anywhere from a few hundred ms up to a full
+  second — two different pitches beating against each other, concentrated
+  in the low end since that's both where the longest-tailed timbres (pad,
+  bass) live and the register a listener's ear fuses two clashing pitches
+  least forgivingly in. `_adsr` now compresses attack/decay to fit inside
+  the note when they don't already, and caps release to roughly the note's
+  own length instead of a fixed absolute value — a short note's overhang
+  now scales with the note (tens of ms) instead of sitting at a constant
+  regardless of it (hundreds of ms to over a second).
+
 **Removed or pulled back, on purpose:** the per-word hi-hat tick is gone
 entirely (a rhythm-section device, not an atmosphere), replaced with a
 sparse soft chime marking only where a new sentence begins (see
