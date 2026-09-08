@@ -366,6 +366,21 @@ letting melodic lines linger into their own silences.
   busier, more masked part of the mix, where it reads as smoothness
   rather than beating.)
 
+- **Fourth pass: replaced the instrument, not another bug fix.** Every
+  prior fix was real and individually verified, and the complaint kept
+  recurring anyway — at that point the more honest move was to stop
+  hunting for a fifth specific mechanism and instead cut the bass down to
+  the simplest possible instrument, so there's nothing left in its own
+  signal chain that could be the culprit. `harmonics` is now `[1.0]` — a
+  plain sine, not even a second or third partial — and `tremolo_depth` is
+  0 (it had been a slow, small amplitude wobble; removed rather than
+  argued for). Beyond the timbre itself, the bass now renders on its own
+  bus and is summed into the mix *after* the reverb/echo send instead of
+  before it (`render()`'s `bass_left`/`bass_right`), so it's not just
+  high-pass-filtered out of the wet path like every other voice's send —
+  it never reaches the reverb or echo at all, zero send contribution,
+  zero chance of comb-filter or feedback-delay coloration on the low end.
+
 **Removed or pulled back, on purpose:** the per-word hi-hat tick is gone
 entirely (a rhythm-section device, not an atmosphere), replaced with a
 sparse soft chime marking only where a new sentence begins (see

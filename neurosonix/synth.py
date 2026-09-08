@@ -55,10 +55,10 @@ TIMBRES = {
                             sustain=0.68, release=1.10, vibrato_rate=0, vibrato_depth=0,
                             vibrato_onset=0, unison_cents=[-9, -3, 3, 9], drive=0, breath=0,
                             tremolo_depth=0.050, tremolo_rate=2.8),
-    'bass':          dict(harmonics=[1.0, 0.09, 0.02], attack=0.02, decay=0.10,
-                            sustain=0.82, release=0.28, vibrato_rate=0, vibrato_depth=0,
+    'bass':          dict(harmonics=[1.0], attack=0.015, decay=0.08,
+                            sustain=0.85, release=0.22, vibrato_rate=0, vibrato_depth=0,
                             vibrato_onset=0, unison_cents=[0], drive=0, breath=0,
-                            tremolo_depth=0.018, tremolo_rate=3.6),
+                            tremolo_depth=0, tremolo_rate=0),
     'countermelody': dict(harmonics=[1.0, 0.18, 0.22, 0.04], attack=0.06, decay=0.16,
                             sustain=0.60, release=0.42, vibrato_rate=4.2, vibrato_depth=0.0035,
                             vibrato_onset=0.24, unison_cents=[-4, 4], drive=0, breath=0,
@@ -348,6 +348,13 @@ def render(score: Score, pan_spread: bool = True, humanize: bool = True,
     n_total = int(total_s * SAMPLE_RATE) + 1
     left = np.zeros(n_total)
     right = np.zeros(n_total)
+    # the bass accumulates on its own pair of buses, kept out of the
+    # reverb/echo send entirely (not just high-pass-filtered out of it like
+    # every other voice) -- it's a plain sine now, so there's no
+    # instrument left to "clean up" here, only effects processing that
+    # could still color it
+    bass_left = np.zeros(n_total)
+    bass_right = np.zeros(n_total)
 
     voice_pan = {'melody': 0.0, 'bass': 0.0, 'countermelody': 0.22, 'arpeggio': 0.0, 'harmony': 0.0}
 
@@ -391,8 +398,9 @@ def render(score: Score, pan_spread: bool = True, humanize: bool = True,
                 samples = samples[: n_total - start_idx]
                 end_idx = n_total
             p = chord_pan_cycle[i % len(chord_pan_cycle)] if pan_spread else 0.0
-            left[start_idx:end_idx] += samples * (1 - max(0, p))
-            right[start_idx:end_idx] += samples * (1 + min(0, p))
+            dest_left, dest_right = (bass_left, bass_right) if voice == 'bass' else (left, right)
+            dest_left[start_idx:end_idx] += samples * (1 - max(0, p))
+            dest_right[start_idx:end_idx] += samples * (1 + min(0, p))
 
     if echo_wet > 0:
         delay_samples = max(1, int(echo_beats * 60.0 / score.tempo_bpm * SAMPLE_RATE))
@@ -406,6 +414,11 @@ def render(score: Score, pan_spread: bool = True, humanize: bool = True,
         offset = 11  # samples -- a hair of L/R stagger on the wet signal for width
         left = left + reverb_wet * wet
         right = right + reverb_wet * np.concatenate([np.zeros(offset), wet[:-offset]])
+
+    # bass rejoins the mix here -- after it's had zero chance to reach, or
+    # be colored by, the reverb/echo send above
+    left = left + bass_left
+    right = right + bass_right
 
     # short, asymmetrically-windowed sine bursts (a note only a few cycles
     # long) don't average to exactly zero on their own; summing dozens of
