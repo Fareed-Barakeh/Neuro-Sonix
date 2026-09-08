@@ -190,13 +190,15 @@ def _sentence_starts(score: Score) -> list[float]:
     return starts
 
 
-def progressive_arrangement(score: Score, vocal: bool = False) -> Score:
+def progressive_arrangement(score: Score, vocal: bool = False, percussion: bool = True) -> Score:
     """Stage the layers in across the piece instead of all at once: melody
     + bass open it, the harmony pad enters at the second phrase, arpeggio,
     countermelody, and the choir (if `vocal`) all join at the third, and
-    percussion only for the final phrase.
+    percussion (if `percussion`) only for the final phrase.
     """
-    arranged = add_percussion(add_arpeggio(add_countermelody(score), pattern=(0, 1, 2, 1)))
+    arranged = add_arpeggio(add_countermelody(score), pattern=(0, 1, 2, 1))
+    if percussion:
+        arranged = add_percussion(arranged)
     if vocal:
         arranged = add_vocal(arranged)
     sentence_starts = _sentence_starts(score)
@@ -214,7 +216,8 @@ def progressive_arrangement(score: Score, vocal: bool = False) -> Score:
     arranged.tracks['harmony'] = [e for e in arranged.tracks['harmony'] if e.start_beat >= harmony_from]
     arranged.tracks['arpeggio'] = [e for e in arranged.tracks['arpeggio'] if e.start_beat >= layer_from]
     arranged.tracks['countermelody'] = [e for e in arranged.tracks['countermelody'] if e.start_beat >= layer_from]
-    arranged.tracks['percussion'] = [e for e in arranged.tracks['percussion'] if e.start_beat >= perc_from]
+    if percussion:
+        arranged.tracks['percussion'] = [e for e in arranged.tracks['percussion'] if e.start_beat >= perc_from]
     if vocal:
         arranged.tracks['vocal'] = [e for e in arranged.tracks['vocal'] if e.start_beat >= vocal_from]
     return arranged

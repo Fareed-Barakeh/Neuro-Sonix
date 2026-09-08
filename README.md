@@ -31,7 +31,7 @@ generated straight from the text files in [`examples/`](examples/):
 | `manifesto` | [`examples/manifesto.txt`](examples/manifesto.txt) — a short statement of what this project is | D minor, chromatic melody (default) | [outputs/manifesto.mp3](outputs/manifesto.mp3) |
 | `entropy` | [`examples/entropy.txt`](examples/entropy.txt) — on how rare letters get emphasized | D minor, tonal melody (`--tonal`) | [outputs/entropy.mp3](outputs/entropy.mp3) |
 | `modulation` | [`examples/modulation.txt`](examples/modulation.txt) — on how the same words read differently depending on the scale they're heard in | D, six modes in sequence (`--modulate`, see below) | [outputs/modulation.mp3](outputs/modulation.mp3) |
-| `cyberdream` | [`examples/cyberdream.txt`](examples/cyberdream.txt) — a machine learning to dream | E phrygian, tonal melody, **with a vocal choir** (`--vocal`, see below) | [outputs/cyberdream.mp3](outputs/cyberdream.mp3) |
+| `cyberdream` | [`examples/cyberdream.txt`](examples/cyberdream.txt) — a machine learning to dream | E phrygian, tonal melody, **with a vocal choir, no percussion** (`--vocal --no-percussion`, see below) | [outputs/cyberdream.mp3](outputs/cyberdream.mp3) |
 
 Each also has a `.mid` (open it in any DAW or notation program), a `.wav`
 (the same audio, uncompressed), a `.png` piano roll, and a `.web.json` (the
@@ -137,7 +137,10 @@ one-line flag:
    harmony has rhythmic life instead of just sitting under the melody.
 3. **Add a pulse** — `add_percussion()`. A minimal rhythm-section layer: a
    soft tick on every word, a stronger hit on every sentence, a crash on
-   the final phrase.
+   the final phrase. `--arrange` includes it by default; `--no-percussion`
+   (`progressive_arrangement(score, percussion=False)`) drops it, for a
+   piece that wants the build-up staging of the other layers without a
+   rhythmic pulse under it. `cyberdream` (above) uses this.
 4. **Stage the entrances** — `progressive_arrangement()`. The technique
    that actually makes an arrangement feel like it goes somewhere: layers
    1-3 don't all play from bar one. The piece opens with just melody and

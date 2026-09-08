@@ -8,17 +8,17 @@
   "arranged": true,
   "tonal": true,
   "vocal": true,
+  "percussion": false,
   "tracks": [
     "arpeggio",
     "bass",
     "countermelody",
     "harmony",
     "melody",
-    "percussion",
     "vocal"
   ],
   "letters_sonified": 256,
-  "duration_seconds": 56.96,
+  "duration_seconds": 56.94,
   "chord_progression": [
     "IImaj7",
     "v\u00b0",
