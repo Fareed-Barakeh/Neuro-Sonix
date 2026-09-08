@@ -71,7 +71,15 @@ TIMBRES = {
 
 # voices that can slur into the next note instead of re-attacking, when the
 # gap to the next note in that voice is small enough
-LEGATO_VOICES = {'melody', 'countermelody', 'bass'}
+LEGATO_VOICES = {'melody', 'countermelody'}
+# bass deliberately excluded: each voice's notes are independent buffers
+# summed into the timeline, so a legato glide starts a *new* note's
+# portamento at the still-ringing previous note's own frequency -- for a
+# stretch of tens of ms you get two overlapping near-identical bass tones
+# slowly diverging in pitch, which beats audibly rather than blending. The
+# melody/countermelody voices sit in a busier, more masked part of the mix
+# where that's far less exposed; bass is the least forgiving register for
+# it.
 LEGATO_GAP_S = 0.045
 
 # melodic voices allowed to stretch a note into the quiet that follows it,

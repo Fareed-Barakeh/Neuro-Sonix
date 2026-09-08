@@ -350,6 +350,22 @@ letting melodic lines linger into their own silences.
   bass's own lowest note to put that note partly in the filter's own
   transition band rather than cleanly clear of it.
 
+- **A third, and the actual root cause**: `LEGATO_VOICES` included `bass`.
+  Each voice's notes render as independent buffers additively summed into
+  the timeline (`render()`), so when two bass notes land close together, a
+  legato/portamento glide starts the *new* note's pitch sweep at the
+  *previous* note's own frequency — while that previous note's buffer is
+  still sounding its release tail at that same frequency. For a window of
+  tens of ms you get two overlapping, near-identical bass tones slowly
+  diverging in pitch: textbook beating, an audible warble rather than a
+  clean transition — and it lands on bass specifically because that
+  register has the least other content to mask it under. `bass` is no
+  longer a legato voice: every bass note now attacks cleanly at its own
+  pitch instead of gliding from whatever the previous note is still
+  ringing at. (`melody`/`countermelody` keep portamento — they sit in a
+  busier, more masked part of the mix, where it reads as smoothness
+  rather than beating.)
+
 **Removed or pulled back, on purpose:** the per-word hi-hat tick is gone
 entirely (a rhythm-section device, not an atmosphere), replaced with a
 sparse soft chime marking only where a new sentence begins (see
