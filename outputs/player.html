@@ -17,6 +17,7 @@
     --bass: #199e70;
     --countermelody: #9085e9;
     --arpeggio: #eec24c;
+    --vocal: #e85d9e;
     --perc-kick: #e8e8e8;
     --perc-hihat: #7c7c82;
     --perc-crash: #eec24c;
@@ -120,14 +121,15 @@
 (function () {
   const TRACK_COLOR = {
     melody: 'var(--melody)', harmony: 'var(--harmony)', bass: 'var(--bass)',
-    countermelody: 'var(--countermelody)', arpeggio: 'var(--arpeggio)',
+    countermelody: 'var(--countermelody)', arpeggio: 'var(--arpeggio)', vocal: 'var(--vocal)',
   };
   const TRACK_LABEL = {
     melody: 'Melody (text)', harmony: 'Harmony (Markov chords)', bass: 'Bass',
     countermelody: 'Countermelody', arpeggio: 'Arpeggio', percussion: 'Percussion',
+    vocal: 'Choir (sung vowels)',
   };
   const DRUM_COLOR = { 36: 'var(--perc-kick)', 42: 'var(--perc-hihat)', 49: 'var(--perc-crash)' };
-  const PITCHED_ORDER = ['bass', 'harmony', 'arpeggio', 'countermelody', 'melody'];
+  const PITCHED_ORDER = ['bass', 'harmony', 'arpeggio', 'vocal', 'countermelody', 'melody'];
 
   const root = getComputedStyle(document.documentElement);
   function cssVar(v) { return v.startsWith('var(') ? root.getPropertyValue(v.slice(4, -1)).trim() : v; }

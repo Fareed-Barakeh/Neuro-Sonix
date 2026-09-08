@@ -46,6 +46,16 @@ from .compose import Score
 
 SAMPLE_RATE = 44100
 
+# vowel formants (F1, F2, F3 -- the vocal tract's own resonances, in Hz,
+# with a relative gain each) for the 'vocal' voice's source-filter model
+# (see _formant_filter). 'oo' is a rounded, breathy vowel -- a dreamy
+# choir "ooh" rather than a bright, present "ah".
+_FORMANT_PROFILES = {
+    'oo': [(300.0, 1.0), (870.0, 0.35), (2250.0, 0.15)],
+    'ah': [(700.0, 1.0), (1220.0, 0.55), (2600.0, 0.25)],
+    'ee': [(270.0, 1.0), (2300.0, 0.6), (3000.0, 0.25)],
+}
+
 TIMBRES = {
     'melody':        dict(harmonics=[1.0, 0.32, 0.14, 0.05], attack=0.05, decay=0.15,
                             sustain=0.72, release=0.40, vibrato_rate=4.6, vibrato_depth=0.0045,
@@ -67,6 +77,17 @@ TIMBRES = {
                             sustain=0.05, release=0.50, vibrato_rate=0, vibrato_depth=0,
                             vibrato_onset=0, unison_cents=[-4, 4], drive=0, breath=0,
                             tremolo_depth=0, tremolo_rate=0),
+    # a wordless choir pad, sung on the text's own vowels (see
+    # arrange.add_vocal) -- a wide, gently-decaying harmonic series (a
+    # source-filter model needs real material across the formant range to
+    # shape) run through _formant_filter, which is what makes this read as
+    # a sung vowel rather than just another pad: the formants sit at fixed
+    # absolute Hz, independent of the note's own pitch, the way a real
+    # vocal tract's resonances don't move with the note being sung.
+    'vocal':         dict(harmonics=[0.65 ** k for k in range(14)], attack=0.18, decay=0.25,
+                            sustain=0.65, release=0.90, vibrato_rate=5.5, vibrato_depth=0.007,
+                            vibrato_onset=0.35, unison_cents=[-9, -4, 4, 9], drive=0, breath=0.22,
+                            tremolo_depth=0.03, tremolo_rate=3.2, formants=_FORMANT_PROFILES['oo']),
 }
 
 # voices that can slur into the next note instead of re-attacking, when the
@@ -92,6 +113,26 @@ GM_KICK, GM_HIHAT, GM_CRASH = 36, 42, 49
 
 def _midi_to_freq(note: int) -> float:
     return 440.0 * 2 ** ((note - 69) / 12)
+
+
+def _formant_filter(x: np.ndarray, formants: list[tuple[float, float]], sr: int = SAMPLE_RATE) -> np.ndarray:
+    """A crude source-filter vocal model: a harmonically rich source (see
+    TIMBRES['vocal']) run through a bank of fixed-frequency resonant
+    band-pass filters, one per formant, summed and gain-weighted. Formants
+    live at absolute Hz regardless of the note's own pitch -- that's the
+    part that actually reads as a *vowel* rather than just a differently
+    voiced instrument, since a real vocal tract's resonances don't move
+    with the pitch being sung, only the source (the vocal folds) does."""
+    out = np.zeros_like(x)
+    total_gain = sum(g for _, g in formants)
+    for freq, gain in formants:
+        low = max(20.0, freq * 0.85)
+        high = min(sr / 2 - 100, freq * 1.18)
+        if low >= high:
+            continue
+        b, a = butter(2, [low / (sr / 2), high / (sr / 2)], btype='band')
+        out += gain * lfilter(b, a, x)
+    return out / total_gain
 
 
 def _adsr(n_samples: int, sr: int, attack: float, decay: float, sustain: float, release: float) -> np.ndarray:
@@ -185,6 +226,9 @@ def _render_note(midi_note: int, velocity: int, duration_s: float, voice: str,
     if cfg['drive'] > 0:
         d = cfg['drive']
         wave_sum = np.tanh(wave_sum * d) / np.tanh(d)
+
+    if cfg.get('formants'):
+        wave_sum = _formant_filter(wave_sum, cfg['formants'])
 
     out = wave_sum * env
 
@@ -374,7 +418,8 @@ def render(score: Score, pan_spread: bool = True, humanize: bool = True,
     bass_left = np.zeros(n_total)
     bass_right = np.zeros(n_total)
 
-    voice_pan = {'melody': 0.0, 'bass': 0.0, 'countermelody': 0.22, 'arpeggio': 0.0, 'harmony': 0.0}
+    voice_pan = {'melody': 0.0, 'bass': 0.0, 'countermelody': 0.22, 'arpeggio': 0.0, 'harmony': 0.0,
+                 'vocal': 0.0}  # centered -- a choir's width comes from the reverb send, not a hard pan
 
     for voice, events in score.tracks.items():
         chord_pan_cycle = [-0.35, 0.0, 0.35] if voice in ('harmony', 'arpeggio') else [voice_pan.get(voice, 0.0)]

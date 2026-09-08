@@ -14,6 +14,7 @@ GM_PROGRAM = {
     'bass': 33,          # Fingered Bass
     'countermelody': 69, # Oboe -- distinct from the flute lead, sits just under it
     'arpeggio': 9,       # Glockenspiel -- bright, articulate, cuts through the pad
+    'vocal': 54,         # Voice Oohs -- matches synth.py's 'oo' formant profile
 }
 
 PERCUSSION_CHANNEL = 9  # GM channel 10 (0-indexed 9): fixed drum map, no program_change

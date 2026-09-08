@@ -18,11 +18,11 @@ below, since the original README overstated the AI involved.
 ## Listen — and play
 
 **[Open the interactive player](outputs/player.html)** — a browser page (no
-install, no server) that plays any of the three demo pieces back with a
+install, no server) that plays any of the four demo pieces back with a
 synced, animated piano roll and the source text highlighted letter by
 letter as it sounds, karaoke-style.
 
-Three demonstration pieces, all fully arranged (see
+Four demonstration pieces, all fully arranged (see
 [Advanced arrangement](#advanced-arrangement) below) and in [`outputs/`](outputs/),
 generated straight from the text files in [`examples/`](examples/):
 
@@ -31,6 +31,7 @@ generated straight from the text files in [`examples/`](examples/):
 | `manifesto` | [`examples/manifesto.txt`](examples/manifesto.txt) — a short statement of what this project is | D minor, chromatic melody (default) | [outputs/manifesto.mp3](outputs/manifesto.mp3) |
 | `entropy` | [`examples/entropy.txt`](examples/entropy.txt) — on how rare letters get emphasized | D minor, tonal melody (`--tonal`) | [outputs/entropy.mp3](outputs/entropy.mp3) |
 | `modulation` | [`examples/modulation.txt`](examples/modulation.txt) — on how the same words read differently depending on the scale they're heard in | D, six modes in sequence (`--modulate`, see below) | [outputs/modulation.mp3](outputs/modulation.mp3) |
+| `cyberdream` | [`examples/cyberdream.txt`](examples/cyberdream.txt) — a machine learning to dream | E phrygian, tonal melody, **with a vocal choir** (`--vocal`, see below) | [outputs/cyberdream.mp3](outputs/cyberdream.mp3) |
 
 Each also has a `.mid` (open it in any DAW or notation program), a `.wav`
 (the same audio, uncompressed), a `.png` piano roll, and a `.web.json` (the
@@ -54,6 +55,9 @@ python -m neurosonix compose "Some text." --out outputs/mine --arrange --tonal \
   --modulate dorian,phrygian,aeolian,mixolydian,lydian,ionian
 # -> cycles the harmony (and melody, since --tonal) through those six modes,
 #    one per sentence, sharing --key's tonic (modal interchange)
+
+python -m neurosonix compose "Some text." --out outputs/mine --arrange --vocal
+# -> adds a wordless choir, sung on the text's own vowels (see Instrumentation & mix)
 
 python -m neurosonix batch examples/ --out outputs/ --arrange
 # -> sonifies every .txt file in examples/, and refreshes outputs/neurosonix-data.js
@@ -115,15 +119,18 @@ player can never drift out of sync with each other.
 `compose()` alone produces three tracks: melody, a harmony pad, and bass.
 `--arrange` (or `neurosonix.arrange.progressive_arrangement()` from Python)
 runs a second pass over that same `Score` that applies four classic
-arranging techniques, in order — this is the actual step-by-step technique,
-not just a one-line flag:
+arranging techniques, in order, plus one more that's opt-in on top
+(`--vocal`) — this is the actual step-by-step technique, not just a
+one-line flag:
 
 1. **Harmonize the melody** — `add_countermelody()`. A second melodic line
-   in parallel harmony with the lead, a third below, sounding only on
+   in parallel harmony with the lead, a sixth above, sounding only on
    accented notes (word starts, uppercase letters) so it reads as emphasis
    rather than a doubled line. This is the oldest harmonization trick
    there is: parallel thirds and sixths, the backbone of close vocal
-   harmony.
+   harmony — placed above the lead rather than below since this system's
+   pitch range already sits low, and a voice underneath would only crowd
+   the bass further.
 2. **Break the chords into motion** — `add_arpeggio()`. The harmony pad is
    static, sustained chords; this rolls each one into a
    root-third-fifth-third arpeggio at a 16th-note subdivision, so the
@@ -134,12 +141,25 @@ not just a one-line flag:
 4. **Stage the entrances** — `progressive_arrangement()`. The technique
    that actually makes an arrangement feel like it goes somewhere: layers
    1-3 don't all play from bar one. The piece opens with just melody and
-   bass, the harmony pad enters at the second sentence, the countermelody
-   and arpeggio at the third, and percussion only for the final phrase —
-   the same build shape film scores and electronic production both lean
-   on.
+   bass, the harmony pad enters at the second sentence, the countermelody,
+   arpeggio, and choir (if `--vocal`) all join at the third, and
+   percussion only for the final phrase — the same build shape film
+   scores and electronic production both lean on.
+5. **Give it a voice** — `add_vocal()`, opt-in via `--vocal`
+   (`progressive_arrangement(score, vocal=True)` from Python). A wordless
+   choir sung on the text's own vowels. See
+   [Instrumentation & mix](#instrumentation--mix) below for how the
+   instrument itself works — the arranging side of it is just: every
+   vowel letter (a e i o u) in the melody becomes a held note at that
+   same pitch, so the choir is literally singing the vowels the text is
+   already spelling, doubling the lead rather than harmonizing away from
+   it, while consonants pass by unvoiced. Off by default because it
+   changes a piece's character more than the other four layers do — a
+   deliberate addition, not a bug-fixed-in improvement to the base
+   arrangement. `cyberdream` (above) is built with it; the other three
+   demo pieces aren't.
 
-Each of the four functions returns a *new* `Score`; none of them mutate
+Each of the five functions returns a *new* `Score`; none of them mutate
 `compose()`'s output, so the plain 3-track piece is always still available
 by simply not calling `arrange`.
 
@@ -248,8 +268,55 @@ letting melodic lines linger into their own silences.
   gentle detune where they had none before. Perfectly in-tune oscillators
   sound thin and static; a few cents of spread between unison voices is
   most of what "dreamy" actually sounds like.
-- **Drive** (soft `tanh` saturation) on the bass, pulled back to a gentle
-  amount for warmth without the earlier version's edge.
+- **No drive on the bass.** An earlier pass had a gentle `tanh` saturation
+  on it for warmth; measuring its actual effect at the levels it was set
+  to found negligible harmonic content added, so it was pure downside
+  risk (any waveshaper is a potential distortion source) for no real
+  benefit, and was removed. The bass is a plain sine now — the simplest
+  instrument in the system on purpose, after a run of noise complaints
+  that mostly traced back to problems elsewhere in the chain rather than
+  the bass's own timbre — see "Kept it clean" through "Fifth pass" below
+  for the actual story.
+
+**A wordless choir (formant synthesis), opt-in via `--vocal`:**
+
+Every other voice in this system is additive synthesis: a harmonic stack
+run straight through an amplitude envelope. The vocal voice
+(`TIMBRES['vocal']`, `synth._formant_filter()`) is a *source-filter*
+model instead — the closer-to-correct way to actually approximate a
+sung vowel, and the reason it's documented separately from the bullets
+above rather than as one more entry in that list:
+
+- **The source** is a harmonically rich sawtooth-like stack (14
+  partials, `[0.65**k for k in range(14)]`) — deliberately wide-spectrum,
+  because a filter can only shape material that's actually present in
+  what it's given.
+- **The filter** is a bank of three fixed-frequency resonant band-pass
+  filters (`scipy.signal.butter`, one per vowel formant — 300Hz, 870Hz,
+  and 2250Hz for the rounded, breathy "oo" vowel used here, weighted
+  1.0/0.35/0.15), summed. The formants sit at *absolute* Hz, independent
+  of whatever pitch the note itself is — that's the part that actually
+  makes this read as a sung vowel rather than just another pad: a real
+  vocal tract's resonances don't move with the note being sung, only the
+  source (the vocal folds) does. `_FORMANT_PROFILES` also has "ah" and
+  "ee" defined, unused by default but ready to swap in.
+- Everything else about the voice — wider vibrato (real singers have
+  more of it than instruments), a choir-sized unison spread (±4/±9
+  cents, four voices), and audible breath on the attack — leans into
+  "chorus of voices," not "one soloist."
+- `arrange.add_vocal()` derives *which* notes it sings, separately from
+  the instrument itself: every vowel letter (a e i o u) already present
+  in the melody becomes a held vocal note at that same pitch — the choir
+  is literally singing the vowels the text is already spelling, not a
+  new melodic line. Held well past the letter's own brief duration
+  (`VOCAL_STRETCH_FRACTION`, `VOCAL_MIN_DUR_BEATS`) so it reads as a
+  sustained vowel, not a clipped chromatic blip.
+- Unlike bass, the choir is *not* pulled out of the reverb/echo send —
+  it goes through the normal wet path along with melody, harmony, and
+  countermelody. That's deliberate: an ambient choir pad living inside
+  the reverb rather than dry in front of it is most of what reads as
+  "ethereal" about it, and bass's exclusion (see below) was about a
+  register where that wash caused real problems, not a blanket rule.
 
 **Performance and phrasing:**
 
@@ -259,13 +326,15 @@ letting melodic lines linger into their own silences.
   instead of stopping dead at its nominal duration — a held, lingering
   quality rather than a fixed note length, randomized per note so it
   doesn't stretch identically every time.
-- **Legato / portamento.** When melody, countermelody, or bass notes land
+- **Legato / portamento.** When melody or countermelody notes land
   back-to-back with almost no gap (`synth.LEGATO_GAP_S`) — the *other*
   case, when the next note is close rather than far — the second note
   glides up from the first note's pitch instead of re-attacking from
-  silence. This is what the walking bass (see Harmonic sophistication)
-  actually sounds like in the render: the passing tone glides into the
-  next chord's root.
+  silence. Bass is deliberately excluded (`synth.LEGATO_VOICES`): each
+  voice's notes render as independent buffers additively summed into the
+  timeline, not a single reused oscillator, so a glide starting at the
+  *previous* note's own still-ringing frequency produced audible beating
+  rather than a smooth slide — see "the actual root cause" below.
 - **Humanization**: every note's start time gets a few milliseconds of
   jitter and its velocity a few percent, at render time only — the MIDI
   file stays exactly quantized, since that's the notation someone would
@@ -410,8 +479,10 @@ inharmonic bell/gong shimmer (`synth._render_drum`, mostly tuned sine
 partials with only a faint, heavily smoothed noise layer underneath) —
 more melodic and far less noisy than the crash-cymbal noise burst it
 replaced; and breath noise on melody/countermelody attacks, present in
-the previous pass, is off by default now (`breath=0` in every `TIMBRES`
-entry) for a cleaner, less breathy texture.
+the previous pass, is off by default now (`breath=0` in every
+instrumental `TIMBRES` entry) for a cleaner, less breathy texture — the
+one exception is the vocal choir (`breath=0.22`), where audible breath
+is the point, not a texture being cleaned away.
 
 One correctness bug caught in building the reverb, worth naming because
 it's the kind of thing that's easy to miss by only reading the code: a
@@ -481,11 +552,11 @@ neurosonix/        the current engine
   compose.py          orchestrates the four modules above into one Score
   arrange.py          the advanced-arrangement pass (see above)
   render_midi.py      Score -> .mid
-  synth.py            Score -> .wav (built-in additive/noise synth)
+  synth.py            Score -> .wav (built-in additive/noise/formant synth)
   visualize.py        Score -> .png piano roll
   web_export.py       Score -> .web.json for outputs/player.html
   cli.py              `compose` / `batch` commands
-examples/           input texts for the three demo pieces
+examples/           input texts for the four demo pieces
 outputs/            their rendered .mid / .wav / .mp3 / .png / .json /
                     .web.json, the data bundle, and player.html itself
 Code/legacy/        the original 2024 prototype scripts, kept for history

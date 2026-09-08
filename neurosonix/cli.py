@@ -54,12 +54,14 @@ def _parse_modulate(modulate_str: str, tonic_pc: int) -> list[harmony.Key]:
 
 
 def _run_one(text: str, out_stem: pathlib.Path, tempo: float, key_str: str, seed: int | None,
-              arranged: bool, tonal: bool, modulate_str: str | None) -> dict:
+              arranged: bool, tonal: bool, modulate_str: str | None, vocal: bool = False) -> dict:
     key = _parse_key(key_str)
     modulate = _parse_modulate(modulate_str, key.tonic_pc) if modulate_str else None
     score = compose(text, tempo_bpm=tempo, key=key, seed=seed, tonal=tonal, modulate=modulate)
     if arranged:
-        score = arrange.progressive_arrangement(score)
+        score = arrange.progressive_arrangement(score, vocal=vocal)
+    elif vocal:
+        score = arrange.add_vocal(score)
 
     out_stem.parent.mkdir(parents=True, exist_ok=True)
     midi_path = out_stem.with_suffix('.mid')
@@ -81,6 +83,7 @@ def _run_one(text: str, out_stem: pathlib.Path, tempo: float, key_str: str, seed
         'tempo_bpm': tempo,
         'arranged': arranged,
         'tonal': tonal,
+        'vocal': vocal,
         'tracks': sorted(score.tracks.keys()),
         'letters_sonified': len(score.tracks['melody']),
         'duration_seconds': round(score.length_seconds, 2),
@@ -109,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
     p_compose.add_argument('--modulate', default=None,
                              help='comma-separated modes to cycle through per sentence, e.g. '
                                   'dorian,mixolydian,lydian,aeolian (shares --key\'s tonic)')
+    p_compose.add_argument('--vocal', action='store_true',
+                             help='add a wordless choir, sung on the text\'s own vowels')
 
     p_batch = sub.add_parser('batch', help='sonify every .txt file in a folder')
     p_batch.add_argument('input_dir')
@@ -119,13 +124,14 @@ def main(argv: list[str] | None = None) -> int:
     p_batch.add_argument('--arrange', action='store_true')
     p_batch.add_argument('--tonal', action='store_true')
     p_batch.add_argument('--modulate', default=None)
+    p_batch.add_argument('--vocal', action='store_true')
 
     args = parser.parse_args(argv)
 
     if args.command == 'compose':
         text = pathlib.Path(args.file).read_text() if args.file else args.text
         analysis = _run_one(text, pathlib.Path(args.out), args.tempo, args.key, args.seed,
-                              args.arrange, args.tonal, args.modulate)
+                              args.arrange, args.tonal, args.modulate, args.vocal)
         print(json.dumps(analysis, indent=2))
 
     elif args.command == 'batch':
@@ -139,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         for f in txt_files:
             text = f.read_text()
             analysis = _run_one(text, out_dir / f.stem, args.tempo, args.key, args.seed,
-                                  args.arrange, args.tonal, args.modulate)
+                                  args.arrange, args.tonal, args.modulate, args.vocal)
             print(f'{f.name}: {analysis["letters_sonified"]} letters, '
                    f'{analysis["duration_seconds"]}s -> {out_dir / f.stem}.{{mid,wav,png,json,web.json}}')
             web_json_paths[f.stem] = str((out_dir / f.stem).with_suffix('.web.json'))

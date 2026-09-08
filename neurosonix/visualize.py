@@ -13,14 +13,14 @@ BG = '#111113'
 GRID = '#26262a'
 COLORS = {
     'melody': '#3987e5', 'harmony': '#d95926', 'bass': '#199e70',
-    'countermelody': '#9085e9', 'arpeggio': '#eec24c',
+    'countermelody': '#9085e9', 'arpeggio': '#eec24c', 'vocal': '#e85d9e',
 }
 TRACK_LABELS = {
     'melody': 'Melody (text)', 'harmony': 'Harmony (Markov chords)', 'bass': 'Bass',
     'countermelody': 'Countermelody (parallel harmony)', 'arpeggio': 'Arpeggio (broken chords)',
-    'percussion': 'Percussion',
+    'percussion': 'Percussion', 'vocal': 'Choir (sung vowels)',
 }
-PITCHED_DRAW_ORDER = ['bass', 'harmony', 'arpeggio', 'countermelody', 'melody']
+PITCHED_DRAW_ORDER = ['bass', 'harmony', 'arpeggio', 'vocal', 'countermelody', 'melody']
 DRUM_COLOR = {GM_KICK: '#e8e8e8', GM_HIHAT: '#7c7c82', GM_CRASH: '#eec24c'}
 
 

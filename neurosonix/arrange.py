@@ -29,10 +29,21 @@ applies four classic arranging techniques, in order:
   4. STAGE THE ENTRANCES -- progressive_arrangement()
      The technique that actually makes an arrangement feel like it goes
      somewhere: don't play every layer from bar one. This orchestrates
-     1-3 so the piece opens with just melody and bass, then admits the
-     harmony pad, then the arpeggio and countermelody, and only lets
+     1-3 (and the vocal layer below, when asked for) so the piece opens
+     with just melody and bass, then admits the harmony pad, then the
+     arpeggio, countermelody, and choir together, and only lets
      percussion in for the final phrase -- a build, the same shape film
      scores and electronic production both lean on.
+
+A fifth, optional technique lives here too, off by default
+(`progressive_arrangement(score, vocal=True)`):
+
+  5. GIVE IT A VOICE -- add_vocal()
+     A wordless choir, sung on the text's own vowels (see synth.py's
+     formant-filtered 'vocal' TIMBRES entry): every vowel letter in the
+     melody becomes a held note at that same pitch, so the choir is
+     literally singing the vowels the text already spells, doubling the
+     lead rather than harmonizing away from it.
 
 Each function returns a *new* Score with additional tracks; none of them
 mutate compose.py's output, so the plain 3-track piece is always still
@@ -48,6 +59,11 @@ from .compose import NoteEvent, Score
 # arpeggio subdivision, in beats (a 16th note at the piece's own tempo)
 ARPEGGIO_STEP = 0.25
 COUNTERMELODY_INTERVAL = 9  # a sixth above the lead -- see add_countermelody
+
+# a sung vowel needs real time to actually read as sung rather than clipped
+# -- see add_vocal
+VOCAL_MIN_DUR_BEATS = 0.9
+VOCAL_STRETCH_FRACTION = 3.0
 
 # percussion is General MIDI channel 10; these are its fixed key numbers
 GM_CRASH = 49  # the only percussion voice arrange.py uses now -- see add_percussion()
@@ -78,6 +94,29 @@ def add_countermelody(score: Score, interval: int = COUNTERMELODY_INTERVAL) -> S
         note = harmony.snap_to_scale(raw, _key_at(score, ev.start_beat))
         counter.append(NoteEvent(ev.start_beat, ev.duration_beat, note, max(1, ev.velocity - 22), ev.char))
     out.tracks['countermelody'] = counter
+    return out
+
+
+def add_vocal(score: Score) -> Score:
+    """A wordless choir, sung on the text's own vowels (see
+    synth.TIMBRES['vocal'] for the formant-filtered instrument behind it).
+    Every vowel letter in the melody (a e i o u) becomes a held, softened
+    note at that same pitch -- literally the choir singing the vowels the
+    text is already spelling out, doubling the melody's own pitch rather
+    than harmonizing away from it, while consonants pass by unvoiced.
+    Held well past the letter's own brief duration, so it reads as a
+    sustained vowel, not a clipped chromatic blip; neighboring vowels'
+    held notes overlap into each other by design, the way a chord of
+    voices naturally would, rather than each cutting the last one off."""
+    out = copy.deepcopy(score)
+    vocal: list[NoteEvent] = []
+    for ev in score.tracks['melody']:
+        if ev.char.upper() not in 'AEIOU':
+            continue
+        dur = max(ev.duration_beat * VOCAL_STRETCH_FRACTION, VOCAL_MIN_DUR_BEATS)
+        vel = max(1, int(ev.velocity * 0.6))
+        vocal.append(NoteEvent(ev.start_beat, dur, ev.midi_note, vel, ev.char))
+    out.tracks['vocal'] = vocal
     return out
 
 
@@ -151,12 +190,15 @@ def _sentence_starts(score: Score) -> list[float]:
     return starts
 
 
-def progressive_arrangement(score: Score) -> Score:
-    """Stage 1-3 in across the piece instead of all at once: melody + bass
-    open it, the harmony pad enters at the second phrase, arpeggio and
-    countermelody at the third, and percussion only for the final phrase.
+def progressive_arrangement(score: Score, vocal: bool = False) -> Score:
+    """Stage the layers in across the piece instead of all at once: melody
+    + bass open it, the harmony pad enters at the second phrase, arpeggio,
+    countermelody, and the choir (if `vocal`) all join at the third, and
+    percussion only for the final phrase.
     """
     arranged = add_percussion(add_arpeggio(add_countermelody(score), pattern=(0, 1, 2, 1)))
+    if vocal:
+        arranged = add_vocal(arranged)
     sentence_starts = _sentence_starts(score)
     n = len(sentence_starts)
 
@@ -166,10 +208,13 @@ def progressive_arrangement(score: Score) -> Score:
 
     harmony_from = entrance_beat(1) if n > 1 else 0.0
     layer_from = entrance_beat(2) if n > 2 else harmony_from
+    vocal_from = layer_from  # joins alongside arpeggio/countermelody, not a further-delayed reveal
     perc_from = entrance_beat(max(n - 1, 0)) if n > 1 else 0.0
 
     arranged.tracks['harmony'] = [e for e in arranged.tracks['harmony'] if e.start_beat >= harmony_from]
     arranged.tracks['arpeggio'] = [e for e in arranged.tracks['arpeggio'] if e.start_beat >= layer_from]
     arranged.tracks['countermelody'] = [e for e in arranged.tracks['countermelody'] if e.start_beat >= layer_from]
     arranged.tracks['percussion'] = [e for e in arranged.tracks['percussion'] if e.start_beat >= perc_from]
+    if vocal:
+        arranged.tracks['vocal'] = [e for e in arranged.tracks['vocal'] if e.start_beat >= vocal_from]
     return arranged
