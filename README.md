@@ -18,11 +18,11 @@ below, since the original README overstated the AI involved.
 ## Listen — and play
 
 **[Open the interactive player](outputs/player.html)** — a browser page (no
-install, no server) that plays any of the four demo pieces back with a
+install, no server) that plays any of the three demo pieces back with a
 synced, animated piano roll and the source text highlighted letter by
 letter as it sounds, karaoke-style.
 
-Four demonstration pieces, all fully arranged (see
+Three demonstration pieces, all fully arranged (see
 [Advanced arrangement](#advanced-arrangement) below) and in [`outputs/`](outputs/),
 generated straight from the text files in [`examples/`](examples/):
 
@@ -31,7 +31,6 @@ generated straight from the text files in [`examples/`](examples/):
 | `manifesto` | [`examples/manifesto.txt`](examples/manifesto.txt) — a short statement of what this project is | D minor, chromatic melody (default) | [outputs/manifesto.mp3](outputs/manifesto.mp3) |
 | `entropy` | [`examples/entropy.txt`](examples/entropy.txt) — on how rare letters get emphasized | D minor, tonal melody (`--tonal`) | [outputs/entropy.mp3](outputs/entropy.mp3) |
 | `modulation` | [`examples/modulation.txt`](examples/modulation.txt) — on how the same words read differently depending on the scale they're heard in | D, six modes in sequence (`--modulate`, see below) | [outputs/modulation.mp3](outputs/modulation.mp3) |
-| `cyberdream` | [`examples/cyberdream.txt`](examples/cyberdream.txt) — a machine learning to dream | E phrygian, tonal melody, **with a vocal choir, no percussion** (`--vocal --no-percussion`, see below) | [outputs/cyberdream.mp3](outputs/cyberdream.mp3) |
 
 Each also has a `.mid` (open it in any DAW or notation program), a `.wav`
 (the same audio, uncompressed), a `.png` piano roll, and a `.web.json` (the
@@ -140,7 +139,7 @@ one-line flag:
    the final phrase. `--arrange` includes it by default; `--no-percussion`
    (`progressive_arrangement(score, percussion=False)`) drops it, for a
    piece that wants the build-up staging of the other layers without a
-   rhythmic pulse under it. `cyberdream` (above) uses this.
+   rhythmic pulse under it.
 4. **Stage the entrances** — `progressive_arrangement()`. The technique
    that actually makes an arrangement feel like it goes somewhere: layers
    1-3 don't all play from bar one. The piece opens with just melody and
@@ -159,8 +158,8 @@ one-line flag:
    it, while consonants pass by unvoiced. Off by default because it
    changes a piece's character more than the other four layers do — a
    deliberate addition, not a bug-fixed-in improvement to the base
-   arrangement. `cyberdream` (above) is built with it; the other three
-   demo pieces aren't.
+   arrangement. None of the three demo pieces above use it by default;
+   pass `--vocal` to hear it on any of them.
 
 Each of the five functions returns a *new* `Score`; none of them mutate
 `compose()`'s output, so the plain 3-track piece is always still available
@@ -559,7 +558,7 @@ neurosonix/        the current engine
   visualize.py        Score -> .png piano roll
   web_export.py       Score -> .web.json for outputs/player.html
   cli.py              `compose` / `batch` commands
-examples/           input texts for the four demo pieces
+examples/           input texts for the three demo pieces
 outputs/            their rendered .mid / .wav / .mp3 / .png / .json /
                     .web.json, the data bundle, and player.html itself
 Code/legacy/        the original 2024 prototype scripts, kept for history
